@@ -1,83 +1,78 @@
 # @plawio/polymarket-veto-mcp
 
-Guarded MCP sidecar for Polymarket CLI powered by [Veto](https://github.com/PlawIO/veto).
+Guarded MCP server for Polymarket CLI, powered by [Veto](https://github.com/PlawIO/veto). Lets AI agents search markets, place orders, and manage positions — with every mutation validated against policy rules before execution. Simulation by default, no real money moves unless you explicitly opt in.
 
-**Polymarket CLI, but safe for agents.**
+## Get started
 
-## What it does
-
-- Exposes a fixed set of Polymarket MCP tools (no arbitrary shell passthrough).
-- Validates every tool call through Veto policy rules before execution.
-- Defaults to simulation for all mutating actions — no real orders unless explicitly unlocked.
-- Ships four policy profiles covering autonomous bots, human-delegated trading, and experimentation.
-- Wallet-mutating tools (`wallet_import`, `wallet_reset`, `clob_delete_api_key`) are architecturally excluded at the MCP tool registry — they never reach the guard.
-
-## Agent skill (Claude Code)
-
-Install the skill to give your agent full context on tools, profiles, and trading best practices:
+### Claude Code (recommended)
 
 ```bash
-cp -r skills/polymarket-veto ~/.claude/skills/
-bash ~/.claude/skills/polymarket-veto/scripts/setup.sh [profile]
-```
-
-This writes `.mcp.json` to your project and the agent learns the full tool set, decision matrix, error handling, and simulation semantics. See [`skills/polymarket-veto/`](../skills/polymarket-veto/) for details.
-
-## Install and run
-
-```bash
-npx -y @plawio/polymarket-veto-mcp serve
-```
-
-Defaults: `--policy-profile defaults`, simulation on, live trading disabled.
-
-For human-delegated trading with stronger guardrails:
-
-```bash
-npx -y @plawio/polymarket-veto-mcp serve --policy-profile user
-```
-
-### Required: Polymarket CLI binary
-
-This package wraps the Rust `polymarket` CLI. Install it first:
-
-```bash
-# Option A: Homebrew
+# 1. Install the polymarket CLI
 brew install polymarket
 
-# Option B: build from repo root
-cargo build --release
+# 2. Install the agent skill + connect the MCP server
+cp -r skills/polymarket-veto ~/.claude/skills/
+bash ~/.claude/skills/polymarket-veto/scripts/setup.sh
+
+# 3. Restart Claude Code — done.
 ```
 
-Verify with `polymarket --version`. If you built locally, set `polymarket.binaryPath` in `polymarket-veto.config.yaml` or the binary will be auto-discovered from `target/release/`.
+The skill teaches your agent the full tool set, policy profiles, error handling, and simulation semantics. The setup script writes `.mcp.json` to your project so the MCP server starts automatically.
 
-## Policy profiles
+To use a specific profile (see [Pick a profile](#pick-a-profile)):
 
-All profiles block wallet-mutating and raw CTF operations. They differ in how they gate order placement.
+```bash
+bash ~/.claude/skills/polymarket-veto/scripts/setup.sh user
+```
 
-### `defaults` — launch-safe baseline
+### Any MCP host
 
-Orders under $25 pass through. Larger orders and cancel-all require approval. No time-of-day restrictions.
+Add to your MCP config file:
 
-### `agent` — autonomous trading bots
+```json
+{
+  "mcpServers": {
+    "polymarket-veto": {
+      "command": "npm",
+      "args": [
+        "exec", "--yes", "--prefix", "/tmp",
+        "--package", "@plawio/polymarket-veto-mcp",
+        "--", "polymarket-veto-mcp", "serve",
+        "--policy-profile", "defaults"
+      ]
+    }
+  }
+}
+```
 
-Same $25 threshold as defaults, plus an off-hours gate: orders placed outside 8am–8pm ET on weekdays require approval. Weekends are uncovered (no explicit weekend rule).
+Or run directly:
 
-### `user` — human trader delegating to an agent
+```bash
+npx -y @plawio/polymarket-veto-mcp serve --policy-profile defaults
+```
 
-The most layered profile. Designed for users who want an AI agent to trade on their behalf with strong guardrails:
+### Prerequisites
 
-- **Hard cap**: orders > $500 blocked
-- **Large order approval**: orders > $100 require approval
-- **Sell discipline**: all sells require approval regardless of size
-- **Price discipline**: buys above $0.97 (near-resolution) blocked, sells below $0.03 blocked
-- **FOK cap**: fill-or-kill orders > $50 blocked
-- **Off-hours**: weekday trades outside 6am–11pm ET and all weekend trades require approval
-- **Cancel-all**: blocked (use single-order cancel instead)
+This package wraps the Rust `polymarket` CLI binary. Install it before starting the server:
 
-### `conservative` — assisted/experimental
+```bash
+brew install polymarket           # Option A: Homebrew
+cargo build --release             # Option B: build from repo root
+polymarket --version              # verify
+```
 
-Every mutating operation requires approval. Use this when exploring or testing new strategies.
+If you built locally, the binary is auto-discovered from `target/release/`. You can also set `polymarket.binaryPath` in `polymarket-veto.config.yaml`.
+
+## Pick a profile
+
+All profiles block wallet-mutating and raw CTF operations. They differ in how they gate order placement. Pass `--policy-profile <name>` when starting the server.
+
+| Profile | Who it's for | What happens |
+|---------|-------------|--------------|
+| **`defaults`** | Getting started | Orders under $25 go through. Larger orders and cancel-all need approval. No time-of-day limits. |
+| **`agent`** | Autonomous bots | Same as defaults + off-hours gate (outside 8am–8pm ET weekdays need approval). |
+| **`user`** | Human delegating to AI | Hard cap $500, orders > $100 need approval, all sells need approval, price guardrails (no buys > $0.97, no sells < $0.03), FOK > $50 blocked, off-hours + weekends need approval, cancel-all blocked. |
+| **`conservative`** | Testing new strategies | Every mutation needs approval. Nothing goes through automatically. |
 
 ### Decision matrix
 
@@ -123,28 +118,6 @@ polymarket-veto-mcp print-config       # Dump resolved config
 ```
 
 Serve options: `--config <path>`, `--policy-profile defaults|agent|user|conservative`, `--simulation on|off`, `--transport stdio|sse`, `--host <ip>`, `--port <port>`
-
-## MCP client config
-
-Works from any working directory:
-
-```json
-{
-  "mcpServers": {
-    "polymarket-veto": {
-      "command": "npm",
-      "args": [
-        "exec", "--yes", "--prefix", "/tmp",
-        "--package", "@plawio/polymarket-veto-mcp",
-        "--", "polymarket-veto-mcp", "serve",
-        "--policy-profile", "defaults"
-      ]
-    }
-  }
-}
-```
-
-If `npx` fails inside the package source directory, use `pnpm dlx` or `bunx` instead.
 
 ## Simulation vs live trading
 

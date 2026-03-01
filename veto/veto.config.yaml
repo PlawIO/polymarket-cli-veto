@@ -2,16 +2,12 @@ version: "1.0"
 mode: strict
 
 validation:
-  mode: local
+  mode: cloud
 
-# Optional cloud mode:
-# validation:
-#   mode: cloud
-# cloud:
-#   baseUrl: https://api.runveto.com
-#   timeout: 30000
-#   retries: 2
-#   retryDelay: 1000
+cloud:
+  baseUrl: https://api.runveto.com
+  timeout: 30000
+  retries: 2
 
 logging:
   level: info

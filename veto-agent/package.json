@@ -1,6 +1,6 @@
 {
   "name": "@plawio/polymarket-veto-mcp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Guarded MCP sidecar for Polymarket CLI powered by Veto",
   "type": "module",
   "main": "dist/index.js",
@@ -16,7 +16,8 @@
     "build": "tsc -p tsconfig.json && chmod +x dist/bin.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "dev": "tsx src/bin.ts"
+    "dev": "tsx src/bin.ts",
+    "simulate": "tsx simulate-trades.ts"
   },
   "dependencies": {
     "veto-sdk": "^1.17.0",

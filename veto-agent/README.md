@@ -12,6 +12,17 @@ Guarded MCP sidecar for Polymarket CLI powered by [Veto](https://github.com/Plaw
 - Ships four policy profiles covering autonomous bots, human-delegated trading, and experimentation.
 - Wallet-mutating tools (`wallet_import`, `wallet_reset`, `clob_delete_api_key`) are architecturally excluded at the MCP tool registry — they never reach the guard.
 
+## Agent skill (Claude Code)
+
+Install the skill to give your agent full context on tools, profiles, and trading best practices:
+
+```bash
+cp -r skills/polymarket-veto ~/.claude/skills/
+bash ~/.claude/skills/polymarket-veto/scripts/setup.sh [profile]
+```
+
+This writes `.mcp.json` to your project and the agent learns the full tool set, decision matrix, error handling, and simulation semantics. See [`skills/polymarket-veto/`](../skills/polymarket-veto/) for details.
+
 ## Install and run
 
 ```bash

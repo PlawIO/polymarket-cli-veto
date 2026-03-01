@@ -60,6 +60,17 @@ This fork ships a guarded MCP runtime for AI agents:
 - Default posture: read-heavy, simulation-first, policy-gated mutations
 - Tagline: **Polymarket CLI, but safe for agents.**
 
+### Agent skill (Claude Code)
+
+Install the agent skill to teach your AI agent how to use the MCP server:
+
+```bash
+cp -r skills/polymarket-veto ~/.claude/skills/
+bash ~/.claude/skills/polymarket-veto/scripts/setup.sh
+```
+
+This configures the MCP server and gives your agent context on all tools, policy profiles, error handling, and trading best practices.
+
 ### 60-second tester quickstart
 
 ```bash

@@ -83,14 +83,17 @@ npx -y @plawio/polymarket-veto-mcp print-config
 
 ### Policy profiles (included)
 
-- `defaults.yaml`
-- `conservative.yaml`
-- `agent.yaml`
+| Profile | Posture | Use case |
+|---------|---------|----------|
+| `defaults` | Approval > $25, block CTF/wallet | Launch-safe baseline |
+| `agent` | Approval > $25 + off-hours gate, block CTF/wallet | Autonomous trading bots |
+| `user` | Approval > $100, hard cap $500, sell approval, price discipline, FOK cap, off-hours + weekends, block cancel-all/CTF/wallet | Human trader delegating to an agent |
+| `conservative` | Approval on all mutations, block CTF/wallet | Assisted or experimental automation |
 
 Switch profile at runtime:
 
 ```bash
-npx -y @plawio/polymarket-veto-mcp serve --policy-profile defaults
+npx -y @plawio/polymarket-veto-mcp serve --policy-profile user
 ```
 
 If your MCP host runs from inside `veto-agent/` and `npx` fails to resolve the bin, use:

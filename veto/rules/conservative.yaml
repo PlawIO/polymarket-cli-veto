@@ -16,9 +16,6 @@ rules:
       - order_market
       - order_cancel_all
       - approve_set
-      - ctf_split
-      - ctf_merge
-      - ctf_redeem
 
   - id: conservative-over-10
     name: Highlight higher sensitivity above $10

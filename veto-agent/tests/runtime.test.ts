@@ -49,6 +49,32 @@ function okExecution(argv: string[], parsed: unknown): ExecutionResult {
   };
 }
 
+describe('MCP tool boundary — wallet ops rejected at registry', () => {
+  const EXCLUDED_TOOLS = ['wallet_import', 'wallet_reset', 'clob_delete_api_key'] as const;
+
+  for (const tool of EXCLUDED_TOOLS) {
+    it(`rejects ${tool} as unknown tool without invoking guard`, async () => {
+      const guardFn = vi.fn();
+      const runtime = await PolymarketVetoRuntime.create(makeConfig(), {
+        guard: { guard: guardFn },
+        execute: async (binary, argv) => okExecution(argv, { ok: true }),
+      });
+
+      let error: unknown;
+      try {
+        await runtime.callTool(tool, {});
+      } catch (err) {
+        error = err;
+      }
+
+      const mapped = runtime.toRpcError(error);
+      expect(mapped.code).toBe(-32601);
+      expect(mapped.message).toContain('Unknown tool');
+      expect(guardFn).not.toHaveBeenCalled();
+    });
+  }
+});
+
 describe('runtime decisions', () => {
   it('maps deny decisions to policy error code', async () => {
     const runtime = await PolymarketVetoRuntime.create(makeConfig(), {

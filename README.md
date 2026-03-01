@@ -51,69 +51,37 @@ polymarket wallet create
 polymarket approve set
 ```
 
-## Polymarket Veto MCP (Agent-safe sidecar)
+## Use with AI Agents (Polymarket Veto MCP)
 
-This fork ships a guarded MCP runtime for AI agents:
+This fork ships `@plawio/polymarket-veto-mcp` — a guarded MCP server that lets AI agents trade Polymarket safely. Every order goes through policy rules before execution, and everything runs in simulation mode by default (no real money moves unless you explicitly unlock it).
 
-- Directory: `veto-agent/`
-- Package: `@plawio/polymarket-veto-mcp`
-- Default posture: read-heavy, simulation-first, policy-gated mutations
-- Tagline: **Polymarket CLI, but safe for agents.**
+### Get started in Claude Code
 
-### Agent skill (Claude Code)
+**Step 1.** Make sure the `polymarket` CLI is installed:
 
-Install the agent skill to teach your AI agent how to use the MCP server:
+```bash
+brew install polymarket        # or: cargo build --release
+polymarket --version           # verify it works
+```
+
+**Step 2.** Install the agent skill and connect the MCP server:
 
 ```bash
 cp -r skills/polymarket-veto ~/.claude/skills/
 bash ~/.claude/skills/polymarket-veto/scripts/setup.sh
 ```
 
-This configures the MCP server and gives your agent context on all tools, policy profiles, error handling, and trading best practices.
+**Step 3.** Restart Claude Code. That's it.
 
-### 60-second tester quickstart
+Your agent now knows every available tool, every policy profile, how to handle denials and approvals, and that all trades are simulated by default. Try asking it:
 
-```bash
-# 1) Ensure polymarket binary exists
-#    Either install globally:
-brew install polymarket
-#    Or build locally in this repo:
-cargo build --release
+> Search Polymarket for markets about Bitcoin
 
-# 2) Start guarded MCP runtime (stdio transport by default)
-npx -y @plawio/polymarket-veto-mcp serve
-```
+The agent will call `markets_search` through the MCP server and return results.
 
-### High-signal test commands
+### Get started without Claude Code
 
-```bash
-npx -y @plawio/polymarket-veto-mcp doctor
-npx -y @plawio/polymarket-veto-mcp print-tools
-npx -y @plawio/polymarket-veto-mcp print-config
-```
-
-### Policy profiles (included)
-
-| Profile | Posture | Use case |
-|---------|---------|----------|
-| `defaults` | Approval > $25, block CTF/wallet | Launch-safe baseline |
-| `agent` | Approval > $25 + off-hours gate, block CTF/wallet | Autonomous trading bots |
-| `user` | Approval > $100, hard cap $500, sell approval, price discipline, FOK cap, off-hours + weekends, block cancel-all/CTF/wallet | Human trader delegating to an agent |
-| `conservative` | Approval on all mutations, block CTF/wallet | Assisted or experimental automation |
-
-Switch profile at runtime:
-
-```bash
-npx -y @plawio/polymarket-veto-mcp serve --policy-profile user
-```
-
-If your MCP host runs from inside `veto-agent/` and `npx` fails to resolve the bin, use:
-
-```bash
-pnpm dlx @plawio/polymarket-veto-mcp serve --policy-profile defaults
-```
-
-or configure MCP with:
+If you're using a different MCP host, add this to your MCP config:
 
 ```json
 {
@@ -121,73 +89,58 @@ or configure MCP with:
     "polymarket-veto": {
       "command": "npm",
       "args": [
-        "exec",
-        "--yes",
-        "--prefix",
-        "/tmp",
-        "--package",
-        "@plawio/polymarket-veto-mcp",
-        "--",
-        "polymarket-veto-mcp",
-        "serve",
-        "--policy-profile",
-        "defaults"
+        "exec", "--yes", "--prefix", "/tmp",
+        "--package", "@plawio/polymarket-veto-mcp",
+        "--", "polymarket-veto-mcp", "serve",
+        "--policy-profile", "defaults"
       ]
     }
   }
 }
 ```
 
-### Cloud mode (optional)
-
-Local deterministic mode works out of the box. To use cloud-backed validation:
+Or run the server directly:
 
 ```bash
-export VETO_API_KEY=veto_xxx
+npx -y @plawio/polymarket-veto-mcp serve
 ```
 
-Then set `validation.mode: cloud` in `veto/veto.config.yaml`.
+### Pick a profile
 
-### Simulation vs live trading safety
+Profiles control what your agent is allowed to do. Pass `--policy-profile <name>` to the server, or pass the profile name to the setup script (`bash setup.sh user`).
 
-Mutating tools are simulation-first by default.
+| Profile | Who it's for | What it does |
+|---------|-------------|--------------|
+| `defaults` | Getting started | Orders under $25 go through. Larger orders need approval. CTF/wallet ops blocked. |
+| `agent` | Autonomous bots | Same as defaults + blocks off-hours trading (outside 8am–8pm ET weekdays). |
+| `user` | Human delegating to AI | Hard cap $500, sells need approval, price guardrails, FOK limits, weekend/off-hours gating. |
+| `conservative` | Testing/experimenting | Every mutation needs approval. Nothing goes through automatically. |
 
-Live execution requires all three:
+### What your agent can do
 
-1. start with `--simulation off`
-2. set `execution.allowLiveTrades: true` in `veto-agent/polymarket-veto.config.yaml`
-3. export `ALLOW_LIVE_TRADES=true`
+**Freely (no policy check):** search markets, get prices, view order books, check positions.
 
-This prevents accidental wallet-impacting automation.
+**With policy guardrails:** place limit/market orders, cancel orders, on-chain approvals. Each action is checked against your profile's rules — it either goes through, asks for your approval, or gets blocked.
 
-### Tool coverage in v1
+**Never:** import/reset wallets, delete API keys. These are architecturally excluded from the MCP server.
 
-Read-only:
+### Simulation vs live trading
 
-- `markets_list`
-- `markets_search`
-- `markets_get`
-- `clob_book`
-- `clob_midpoint`
-- `clob_price`
-- `portfolio_positions`
+All trades are simulated by default — the agent estimates shares and cost using live market data but never places a real order. To go live, you need all three:
 
-Mutating (policy-guarded):
+1. Start with `--simulation off`
+2. Set `execution.allowLiveTrades: true` in config
+3. Export `ALLOW_LIVE_TRADES=true`
 
-- `order_create_limit`
-- `order_market`
-- `order_cancel`
-- `order_cancel_all`
-- `approve_set`
-- `ctf_split`
-- `ctf_merge`
-- `ctf_redeem`
+### Troubleshooting
 
-Never exposed:
+```bash
+npx -y @plawio/polymarket-veto-mcp doctor        # diagnose binary, config, rules
+npx -y @plawio/polymarket-veto-mcp print-tools    # list registered MCP tools
+npx -y @plawio/polymarket-veto-mcp print-config   # dump resolved config
+```
 
-- `wallet_import`
-- `wallet_reset`
-- `clob_delete_api_key`
+See [`veto-agent/README.md`](veto-agent/README.md) for full tool reference, decision matrix, and development docs.
 
 ## Configuration
 

@@ -1,87 +1,85 @@
-# Polymarket CLI
+# Polymarket CLI Veto
 
-Rust CLI for Polymarket. Browse markets, place orders, manage positions, and interact with onchain contracts — from a terminal or as a JSON API for scripts and agents.
+Upstream Polymarket CLI, plus a Veto-powered MCP sidecar for AI agents.
 
-> **Warning:** This is early, experimental software. Use at your own risk and do not use with large amounts of funds. APIs, commands, and behavior may change without notice. Always verify transactions before confirming.
+This repo is the practical bundle:
+- the Rust `polymarket` CLI for market access and execution
+- the `@plawio/polymarket-veto-mcp` sidecar in [`veto-agent`](./veto-agent)
+- Claude Code skill wiring in [`skills/polymarket-veto`](./skills/polymarket-veto)
+- sample Veto rules and config in [`veto`](./veto)
 
-## Install
+The point of the bundle is simple:
 
-### Homebrew (macOS / Linux)
+Your model suggests.  
+Veto permits.
 
-```bash
-brew tap Polymarket/polymarket-cli https://github.com/Polymarket/polymarket-cli
-brew install polymarket
-```
+Every capital-moving action can be checked before execution against policy, approvals, budget state, payer constraints, and live-vs-simulation rules.
 
-### Shell script
+## What This Repo Gives You
 
-```bash
-curl -sSL https://raw.githubusercontent.com/Polymarket/polymarket-cli/main/install.sh | sh
-```
+### 1. Polymarket CLI
 
-### Build from source
-
-```bash
-git clone https://github.com/Polymarket/polymarket-cli
-cd polymarket-cli
-cargo install --path .
-```
-
-## Quick Start
+The Rust CLI still works as a normal terminal and script tool:
 
 ```bash
-# No wallet needed — browse markets immediately
 polymarket markets list --limit 5
-polymarket markets search "election"
-polymarket events list --tag politics
-
-# Check a specific market
-polymarket markets get will-trump-win-the-2024-election
-
-# JSON output for scripts
+polymarket markets search "bitcoin"
+polymarket markets get will-trump-win
 polymarket -o json markets list --limit 3
 ```
 
-To trade, set up a wallet:
+### 2. Veto MCP Server
+
+The sidecar exposes guarded MCP tools for agents:
+- market reads
+- order placement and cancellation
+- approval-aware execution
+- runtime readiness and budget inspection
+- x402-backed paid research
+
+Key agent-facing tools:
+- `markets_list`, `markets_search`, `markets_get`
+- `clob_book`, `clob_midpoint`, `clob_price`
+- `order_create_limit`, `order_market`, `order_cancel`, `order_cancel_all`
+- `budget_status`, `runtime_status`, `approval_status`
+- `intel_search`, `intel_market_context`
+
+Architecturally excluded:
+- `wallet_import`
+- `wallet_reset`
+- `clob_delete_api_key`
+
+## Quick Start
+
+### Claude Code
+
+1. Build or install the Polymarket CLI:
 
 ```bash
-polymarket setup
-# Or manually:
-polymarket wallet create
-polymarket approve set
+brew install polymarket
+# or from this repo:
+cargo build --release
 ```
 
-## Use with AI Agents (Polymarket Veto MCP)
-
-This fork ships `@plawio/polymarket-veto-mcp` — a guarded MCP server that lets AI agents trade Polymarket safely. Every order goes through policy rules before execution, and everything runs in simulation mode by default (no real money moves unless you explicitly unlock it).
-
-### Get started in Claude Code
-
-**Step 1.** Make sure the `polymarket` CLI is installed:
+2. Install the MCP sidecar deps:
 
 ```bash
-brew install polymarket        # or: cargo build --release
-polymarket --version           # verify it works
+pnpm --dir veto-agent install
+pnpm --dir veto-agent build
 ```
 
-**Step 2.** Install the agent skill and connect the MCP server:
+3. Install the Claude skill:
 
 ```bash
 cp -r skills/polymarket-veto ~/.claude/skills/
 bash ~/.claude/skills/polymarket-veto/scripts/setup.sh
 ```
 
-**Step 3.** Restart Claude Code. That's it.
+4. Restart Claude Code.
 
-Your agent now knows every available tool, every policy profile, how to handle denials and approvals, and that all trades are simulated by default. Try asking it:
+At that point the agent can use the Veto-wrapped Polymarket tools through MCP.
 
-> Search Polymarket for markets about Bitcoin
-
-The agent will call `markets_search` through the MCP server and return results.
-
-### Get started without Claude Code
-
-If you're using a different MCP host, add this to your MCP config:
+### Any MCP Host
 
 ```json
 {
@@ -89,496 +87,170 @@ If you're using a different MCP host, add this to your MCP config:
     "polymarket-veto": {
       "command": "npm",
       "args": [
-        "exec", "--yes", "--prefix", "/tmp",
-        "--package", "@plawio/polymarket-veto-mcp",
-        "--", "polymarket-veto-mcp", "serve",
-        "--policy-profile", "defaults"
+        "exec",
+        "--yes",
+        "--prefix",
+        "/tmp",
+        "--package",
+        "@plawio/polymarket-veto-mcp",
+        "--",
+        "polymarket-veto-mcp",
+        "serve",
+        "--policy-profile",
+        "defaults"
       ]
     }
   }
 }
 ```
 
-Or run the server directly:
+Or locally from this repo:
 
 ```bash
-npx -y @plawio/polymarket-veto-mcp serve
+pnpm --dir veto-agent exec tsx src/bin.ts serve --config polymarket-veto.config.yaml
 ```
 
-### Pick a profile
+## How It Works
 
-Profiles control what your agent is allowed to do. Pass `--policy-profile <name>` to the server, or pass the profile name to the setup script (`bash setup.sh user`).
+For priced actions, the runtime loop is:
 
-| Profile | Who it's for | What it does |
-|---------|-------------|--------------|
-| `defaults` | Getting started | Orders under $25 go through. Larger orders need approval. CTF/wallet ops blocked. |
-| `agent` | Autonomous bots | Same as defaults + blocks off-hours trading (outside 8am–8pm ET weekdays). |
-| `user` | Human delegating to AI | Hard cap $500, sells need approval, price guardrails, FOK limits, weekend/off-hours gating. |
-| `conservative` | Testing/experimenting | Every mutation needs approval. Nothing goes through automatically. |
+1. Agent proposes an action.
+2. Veto policy evaluates it.
+3. Economic authorization evaluates payer, budget, and approval requirements.
+4. Runtime returns one of:
+   - allow
+   - deny
+   - require approval
+5. If allowed, the CLI action or x402 call executes.
+6. Actual spend is committed back to the authority.
 
-### What your agent can do
+This means the agent never gets to move capital first and explain later.
 
-**Freely (no policy check):** search markets, get prices, view order books, check positions.
+## Profiles
 
-**With policy guardrails:** place limit/market orders, cancel orders, on-chain approvals. Each action is checked against your profile's rules — it either goes through, asks for your approval, or gets blocked.
+Profiles define the default policy posture:
 
-**Never:** import/reset wallets, delete API keys. These are architecturally excluded from the MCP server.
+| Profile | Behavior |
+| --- | --- |
+| `defaults` | Small orders allowed, larger orders require approval |
+| `agent` | Defaults plus off-hours gating |
+| `user` | Harder caps, sell-side approvals, price discipline |
+| `conservative` | Every mutation requires approval |
 
-### Simulation vs live trading
+You can set the profile with `--policy-profile <name>` when starting the MCP server.
 
-All trades are simulated by default — the agent estimates shares and cost using live market data but never places a real order. To go live, you need all three:
+## Approval Flow
 
-1. Start with `--simulation off`
-2. Set `execution.allowLiveTrades: true` in config
-3. Export `ALLOW_LIVE_TRADES=true`
+Approval handling is configurable in the sidecar:
 
-### Troubleshooting
+- `runtime.approvalMode: return`
+  The MCP call returns immediately with `approvalId`, `pending`, and context so the agent can keep working and check `approval_status` later.
+- `runtime.approvalMode: wait`
+  The MCP call blocks and polls until approval resolves or times out.
 
-```bash
-npx -y @plawio/polymarket-veto-mcp doctor        # diagnose binary, config, rules
-npx -y @plawio/polymarket-veto-mcp print-tools    # list registered MCP tools
-npx -y @plawio/polymarket-veto-mcp print-config   # dump resolved config
-```
+The checked-in sample config defaults to `return` because it is the better agent UX.
 
-See [`veto-agent/README.md`](veto-agent/README.md) for full tool reference, decision matrix, and development docs.
+## Simulation and Live Trading
 
-## Configuration
+Mutating tools simulate by default.
 
-### Wallet Setup
+Simulation means:
+- the runtime estimates notional and shares
+- policy and economic checks still apply
+- no real order is submitted
+- x402 tools stop at quote discovery and do not settle payment
 
-The CLI needs a private key to sign orders and on-chain transactions. Three ways to provide it (checked in this order):
+Live execution requires all three:
 
-1. **CLI flag**: `--private-key 0xabc...`
-2. **Environment variable**: `POLYMARKET_PRIVATE_KEY=0xabc...`
-3. **Config file**: `~/.config/polymarket/config.json`
+1. start the server with `--simulation off`
+2. set `execution.allowLiveTrades: true`
+3. export `ALLOW_LIVE_TRADES=true`
 
-```bash
-# Create a new wallet (generates random key, saves to config)
-polymarket wallet create
+## Economic Authorization and x402
 
-# Import an existing key
-polymarket wallet import 0xabc123...
+The sidecar can govern both:
+- Polymarket trading notional
+- x402-paid research spend
 
-# Check what's configured
-polymarket wallet show
-```
+The same runtime can:
+- enforce payer requirements
+- enforce approved payer lists
+- request budget authorization
+- fail closed on live priced actions when the authority is unavailable
+- return cached previews for simulation
+- attach `economic` receipts to priced tool responses
 
-The config file (`~/.config/polymarket/config.json`):
-
-```json
-{
-  "private_key": "0x...",
-  "chain_id": 137,
-  "signature_type": "proxy"
-}
-```
-
-### Signature Types
-
-- `proxy` (default) — uses Polymarket's proxy wallet system
-- `eoa` — signs directly with your key
-- `gnosis-safe` — for multisig wallets
-
-Override per-command with `--signature-type eoa` or via `POLYMARKET_SIGNATURE_TYPE`.
-
-### What Needs a Wallet
-
-Most commands work without a wallet — browsing markets, viewing order books, checking prices. You only need a wallet for:
-
-- Placing and canceling orders (`clob create-order`, `clob market-order`, `clob cancel-*`)
-- Checking your balances and trades (`clob balance`, `clob trades`, `clob orders`)
-- On-chain operations (`approve set`, `ctf split/merge/redeem`)
-- Reward and API key management (`clob rewards`, `clob create-api-key`)
-
-## Output Formats
-
-Every command supports `--output table` (default) and `--output json`.
-
-```bash
-# Human-readable table (default)
-polymarket markets list --limit 2
-```
-
-```
- Question                            Price (Yes)  Volume   Liquidity  Status
- Will Trump win the 2024 election?   52.00¢       $145.2M  $1.2M      Active
- Will BTC hit $100k by Dec 2024?     67.30¢       $89.4M   $430.5K    Active
-```
-
-```bash
-# Machine-readable JSON
-polymarket -o json markets list --limit 2
-```
-
-```json
-[
-  { "id": "12345", "question": "Will Trump win the 2024 election?", "outcomePrices": ["0.52", "0.48"], ... },
-  { "id": "67890", "question": "Will BTC hit $100k by Dec 2024?", ... }
-]
-```
-
-Short form: `-o json` or `-o table`.
-
-Errors follow the same pattern — table mode prints `Error: ...` to stderr, JSON mode prints `{"error": "..."}` to stdout. Non-zero exit code either way.
+x402 tools:
+- `intel_search`
+- `intel_market_context`
 
 ## Commands
 
-### Markets
+### Polymarket CLI
+
+Examples:
 
 ```bash
-# List markets with filters
 polymarket markets list --limit 10
-polymarket markets list --active true --order volume_num
-polymarket markets list --closed false --limit 50 --offset 25
-
-# Get a single market by ID or slug
-polymarket markets get 12345
-polymarket markets get will-trump-win
-
-# Search
-polymarket markets search "bitcoin" --limit 5
-
-# Get tags for a market
-polymarket markets tags 12345
+polymarket markets search "fed"
+polymarket clob midpoint <token>
+polymarket clob book <token>
 ```
 
-**Flags for `markets list`**: `--limit`, `--offset`, `--order`, `--ascending`, `--active`, `--closed`
-
-### Events
-
-Events group related markets (e.g. "2024 Election" contains multiple yes/no markets).
+Build locally:
 
 ```bash
-polymarket events list --limit 10
-polymarket events list --tag politics --active true
-polymarket events get 500
-polymarket events tags 500
+cargo build --release
+./target/release/polymarket --version
 ```
 
-**Flags for `events list`**: `--limit`, `--offset`, `--order`, `--ascending`, `--active`, `--closed`, `--tag`
-
-### Tags, Series, Comments, Profiles, Sports
+### Veto MCP Sidecar
 
 ```bash
-# Tags
-polymarket tags list
-polymarket tags get politics
-polymarket tags related politics
-polymarket tags related-tags politics
-
-# Series (recurring events)
-polymarket series list --limit 10
-polymarket series get 42
-
-# Comments on an entity
-polymarket comments list --entity-type event --entity-id 500
-polymarket comments get abc123
-polymarket comments by-user 0xf5E6...
-
-# Public profiles
-polymarket profiles get 0xf5E6...
-
-# Sports metadata
-polymarket sports list
-polymarket sports market-types
-polymarket sports teams --league NFL --limit 32
+pnpm --dir veto-agent exec tsx src/bin.ts serve --config polymarket-veto.config.yaml
+pnpm --dir veto-agent exec tsx src/bin.ts doctor --config polymarket-veto.config.yaml
+pnpm --dir veto-agent exec tsx src/bin.ts status --config polymarket-veto.config.yaml
+pnpm --dir veto-agent exec tsx src/bin.ts approval-status --approval-id <id> --config polymarket-veto.config.yaml
+pnpm --dir veto-agent exec tsx src/bin.ts print-tools --config polymarket-veto.config.yaml
+pnpm --dir veto-agent exec tsx src/bin.ts print-config --config polymarket-veto.config.yaml
 ```
 
-### Order Book & Prices (CLOB)
+## Local Development
 
-All read-only — no wallet needed.
+### Rust CLI
 
 ```bash
-# Check API health
-polymarket clob ok
-
-# Prices
-polymarket clob price 48331043336612883... --side buy
-polymarket clob midpoint 48331043336612883...
-polymarket clob spread 48331043336612883...
-
-# Batch queries (comma-separated token IDs)
-polymarket clob batch-prices "TOKEN1,TOKEN2" --side buy
-polymarket clob midpoints "TOKEN1,TOKEN2"
-polymarket clob spreads "TOKEN1,TOKEN2"
-
-# Order book
-polymarket clob book 48331043336612883...
-polymarket clob books "TOKEN1,TOKEN2"
-
-# Last trade
-polymarket clob last-trade 48331043336612883...
-
-# Market info
-polymarket clob market 0xABC123...  # by condition ID
-polymarket clob markets             # list all
-
-# Price history
-polymarket clob price-history 48331043336612883... --interval 1d --fidelity 30
-
-# Metadata
-polymarket clob tick-size 48331043336612883...
-polymarket clob fee-rate 48331043336612883...
-polymarket clob neg-risk 48331043336612883...
-polymarket clob time
-polymarket clob geoblock
+cargo test
+cargo build --release
 ```
 
-**Interval options for `price-history`**: `1m`, `1h`, `6h`, `1d`, `1w`, `max`
-
-### Trading (CLOB, authenticated)
-
-Requires a configured wallet.
+### Veto Agent
 
 ```bash
-# Place a limit order (buy 10 shares at $0.50)
-polymarket clob create-order \
-  --token 48331043336612883... \
-  --side buy --price 0.50 --size 10
-
-# Place a market order (buy $5 worth)
-polymarket clob market-order \
-  --token 48331043336612883... \
-  --side buy --amount 5
-
-# Post multiple orders at once
-polymarket clob post-orders \
-  --tokens "TOKEN1,TOKEN2" \
-  --side buy \
-  --prices "0.40,0.60" \
-  --sizes "10,10"
-
-# Cancel
-polymarket clob cancel ORDER_ID
-polymarket clob cancel-orders "ORDER1,ORDER2"
-polymarket clob cancel-market --market 0xCONDITION...
-polymarket clob cancel-all
-
-# View your orders and trades
-polymarket clob orders
-polymarket clob orders --market 0xCONDITION...
-polymarket clob order ORDER_ID
-polymarket clob trades
-
-# Check balances
-polymarket clob balance --asset-type collateral
-polymarket clob balance --asset-type conditional --token 48331043336612883...
-polymarket clob update-balance --asset-type collateral
+pnpm --dir veto-agent install
+pnpm --dir veto-agent typecheck
+pnpm --dir veto-agent test
+pnpm --dir veto-agent build
 ```
 
-**Order types**: `GTC` (default), `FOK`, `GTD`, `FAK`. Add `--post-only` for limit orders.
+## Repo Map
 
-### Rewards & API Keys (CLOB, authenticated)
+- [`veto-agent/README.md`](./veto-agent/README.md)
+  Full MCP tool reference, config surface, approval behavior, economic auth, and x402 docs.
+- [`veto-agent/polymarket-veto.config.yaml`](./veto-agent/polymarket-veto.config.yaml)
+  Sample sidecar config.
+- [`veto/`](./veto)
+  Sample Veto policy config and rules.
+- [`skills/polymarket-veto`](./skills/polymarket-veto)
+  Claude Code skill and setup flow.
 
-```bash
-polymarket clob rewards --date 2024-06-15
-polymarket clob earnings --date 2024-06-15
-polymarket clob earnings-markets --date 2024-06-15
-polymarket clob reward-percentages
-polymarket clob current-rewards
-polymarket clob market-reward 0xCONDITION...
+## Current Status
 
-# Check if orders are scoring rewards
-polymarket clob order-scoring ORDER_ID
-polymarket clob orders-scoring "ORDER1,ORDER2"
+This repo is intentionally opinionated toward agent use:
+- simulation-first
+- policy before execution
+- approval-aware runtime behavior
+- capital authorization hooks for priced actions
 
-# API key management
-polymarket clob api-keys
-polymarket clob create-api-key
-polymarket clob delete-api-key
-
-# Account status
-polymarket clob account-status
-polymarket clob notifications
-polymarket clob delete-notifications "NOTIF1,NOTIF2"
-```
-
-### On-Chain Data
-
-Public data — no wallet needed.
-
-```bash
-# Portfolio
-polymarket data positions 0xWALLET_ADDRESS
-polymarket data closed-positions 0xWALLET_ADDRESS
-polymarket data value 0xWALLET_ADDRESS
-polymarket data traded 0xWALLET_ADDRESS
-
-# Trade history
-polymarket data trades 0xWALLET_ADDRESS --limit 50
-
-# Activity
-polymarket data activity 0xWALLET_ADDRESS
-
-# Market data
-polymarket data holders 0xCONDITION_ID
-polymarket data open-interest 0xCONDITION_ID
-polymarket data volume 12345  # event ID
-
-# Leaderboards
-polymarket data leaderboard --period month --order-by pnl --limit 10
-polymarket data builder-leaderboard --period week
-polymarket data builder-volume --period month
-```
-
-### Contract Approvals
-
-Before trading, Polymarket contracts need ERC-20 (USDC) and ERC-1155 (CTF token) approvals.
-
-```bash
-# Check current approvals (read-only)
-polymarket approve check
-polymarket approve check 0xSOME_ADDRESS
-
-# Approve all contracts (sends 6 on-chain transactions, needs MATIC for gas)
-polymarket approve set
-```
-
-### CTF Operations
-
-Split, merge, and redeem conditional tokens directly on-chain.
-
-```bash
-# Split $10 USDC into YES/NO tokens
-polymarket ctf split --condition 0xCONDITION... --amount 10
-
-# Merge tokens back to USDC
-polymarket ctf merge --condition 0xCONDITION... --amount 10
-
-# Redeem winning tokens after resolution
-polymarket ctf redeem --condition 0xCONDITION...
-
-# Redeem neg-risk positions
-polymarket ctf redeem-neg-risk --condition 0xCONDITION... --amounts "10,5"
-
-# Calculate IDs (read-only, no wallet needed)
-polymarket ctf condition-id --oracle 0xORACLE... --question 0xQUESTION... --outcomes 2
-polymarket ctf collection-id --condition 0xCONDITION... --index-set 1
-polymarket ctf position-id --collection 0xCOLLECTION...
-```
-
-`--amount` is in USDC (e.g., `10` = $10). The `--partition` flag defaults to binary (`1,2`). On-chain operations require MATIC for gas on Polygon.
-
-### Bridge
-
-Deposit assets from other chains into Polymarket.
-
-```bash
-# Get deposit addresses (EVM, Solana, Bitcoin)
-polymarket bridge deposit 0xWALLET_ADDRESS
-
-# List supported chains and tokens
-polymarket bridge supported-assets
-
-# Check deposit status
-polymarket bridge status 0xDEPOSIT_ADDRESS
-```
-
-### Wallet Management
-
-```bash
-polymarket wallet create               # Generate new random wallet
-polymarket wallet create --force       # Overwrite existing
-polymarket wallet import 0xKEY...      # Import existing key
-polymarket wallet address              # Print wallet address
-polymarket wallet show                 # Full wallet info (address, source, config path)
-polymarket wallet reset                # Delete config (prompts for confirmation)
-polymarket wallet reset --force        # Delete without confirmation
-```
-
-### Interactive Shell
-
-```bash
-polymarket shell
-# polymarket> markets list --limit 3
-# polymarket> clob book 48331043336612883...
-# polymarket> exit
-```
-
-Supports command history. All commands work the same as the CLI, just without the `polymarket` prefix.
-
-### Other
-
-```bash
-polymarket status     # API health check
-polymarket setup      # Guided first-time setup wizard
-polymarket upgrade    # Update to the latest version
-polymarket --version
-polymarket --help
-```
-
-## Common Workflows
-
-### Browse and research markets
-
-```bash
-polymarket markets search "bitcoin" --limit 5
-polymarket markets get bitcoin-above-100k
-polymarket clob book 48331043336612883...
-polymarket clob price-history 48331043336612883... --interval 1d
-```
-
-### Set up a new wallet and start trading
-
-```bash
-polymarket wallet create
-polymarket approve set                    # needs MATIC for gas
-polymarket clob balance --asset-type collateral
-polymarket clob market-order --token TOKEN_ID --side buy --amount 5
-```
-
-### Monitor your portfolio
-
-```bash
-polymarket data positions 0xYOUR_ADDRESS
-polymarket data value 0xYOUR_ADDRESS
-polymarket clob orders
-polymarket clob trades
-```
-
-### Place and manage limit orders
-
-```bash
-# Place order
-polymarket clob create-order --token TOKEN_ID --side buy --price 0.45 --size 20
-
-# Check it
-polymarket clob orders
-
-# Cancel if needed
-polymarket clob cancel ORDER_ID
-
-# Or cancel everything
-polymarket clob cancel-all
-```
-
-### Script with JSON output
-
-```bash
-# Pipe market data to jq
-polymarket -o json markets list --limit 100 | jq '.[].question'
-
-# Check prices programmatically
-polymarket -o json clob midpoint TOKEN_ID | jq '.mid'
-
-# Error handling in scripts
-if ! result=$(polymarket -o json clob balance --asset-type collateral 2>/dev/null); then
-  echo "Failed to fetch balance"
-fi
-```
-
-## Architecture
-
-```
-src/
-  main.rs        -- CLI entry point, clap parsing, error handling
-  auth.rs        -- Wallet resolution, RPC provider, CLOB authentication
-  config.rs      -- Config file (~/.config/polymarket/config.json)
-  shell.rs       -- Interactive REPL
-  commands/      -- One module per command group
-  output/        -- Table and JSON rendering per command group
-```
-
-## License
-
-MIT
+If you just want the raw Polymarket CLI, the Rust binary is still here.
+If you want an AI agent to operate with hard capital controls, this is the repo.

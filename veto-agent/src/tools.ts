@@ -1,3 +1,4 @@
+import type { EconomicActionCategory } from './economic.js';
 import type { PolicyProfile } from './types.js';
 
 export interface ToolSchema {
@@ -17,7 +18,9 @@ export interface ToolSpec {
   name: string;
   description: string;
   mutating: boolean;
-  internal?: boolean;
+  execution: 'polymarket' | 'internal' | 'x402';
+  priced?: boolean;
+  economicCategory?: EconomicActionCategory;
   inputSchema: ToolSchema;
   build(args: Record<string, unknown>): CommandBuildResult;
 }
@@ -101,6 +104,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'markets_list',
     description: 'List markets with optional filters.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       properties: {
@@ -126,6 +130,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'markets_search',
     description: 'Search markets by free text query.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['query'],
@@ -148,6 +153,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'markets_get',
     description: 'Get market details by id or slug.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['market'],
@@ -169,6 +175,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'clob_book',
     description: 'Get order book for token id.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['token'],
@@ -190,6 +197,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'clob_midpoint',
     description: 'Get midpoint price for token id.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['token'],
@@ -211,6 +219,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'clob_price',
     description: 'Get clob price for token/side.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['token', 'side'],
@@ -234,6 +243,7 @@ const READ_ONLY_TOOLS: ToolSpec[] = [
     name: 'portfolio_positions',
     description: 'Get public portfolio positions for wallet address.',
     mutating: false,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['address'],
@@ -258,6 +268,9 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'order_create_limit',
     description: 'Create a limit order on CLOB.',
     mutating: true,
+    execution: 'polymarket',
+    priced: true,
+    economicCategory: 'trade',
     inputSchema: {
       type: 'object',
       required: ['token', 'side', 'price', 'size'],
@@ -317,6 +330,9 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'order_market',
     description: 'Create a market order on CLOB.',
     mutating: true,
+    execution: 'polymarket',
+    priced: true,
+    economicCategory: 'trade',
     inputSchema: {
       type: 'object',
       required: ['token', 'side', 'amount'],
@@ -354,6 +370,7 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'order_cancel',
     description: 'Cancel a specific order.',
     mutating: true,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['orderId'],
@@ -375,6 +392,7 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'order_cancel_all',
     description: 'Cancel all open orders.',
     mutating: true,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -391,6 +409,7 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'approve_set',
     description: 'Set Polymarket contract approvals.',
     mutating: true,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -407,6 +426,9 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'ctf_split',
     description: 'Split USDC into conditional tokens.',
     mutating: true,
+    execution: 'polymarket',
+    priced: true,
+    economicCategory: 'trade',
     inputSchema: {
       type: 'object',
       required: ['condition', 'amount'],
@@ -434,6 +456,9 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'ctf_merge',
     description: 'Merge conditional tokens back to USDC.',
     mutating: true,
+    execution: 'polymarket',
+    priced: true,
+    economicCategory: 'trade',
     inputSchema: {
       type: 'object',
       required: ['condition', 'amount'],
@@ -461,6 +486,7 @@ const MUTATING_TOOLS: ToolSpec[] = [
     name: 'ctf_redeem',
     description: 'Redeem winning conditional tokens.',
     mutating: true,
+    execution: 'polymarket',
     inputSchema: {
       type: 'object',
       required: ['condition'],
@@ -485,7 +511,7 @@ const INTERNAL_TOOLS: ToolSpec[] = [
     name: 'audit_query',
     description: 'Query the audit log for recent decisions and trade history.',
     mutating: false,
-    internal: true,
+    execution: 'internal',
     inputSchema: {
       type: 'object',
       properties: {
@@ -505,7 +531,7 @@ const INTERNAL_TOOLS: ToolSpec[] = [
     name: 'pnl_snapshot',
     description: 'Get a snapshot of all positions with realized and unrealized P&L.',
     mutating: false,
-    internal: true,
+    execution: 'internal',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -519,7 +545,7 @@ const INTERNAL_TOOLS: ToolSpec[] = [
     name: 'pnl_position',
     description: 'Get position details for a specific token.',
     mutating: false,
-    internal: true,
+    execution: 'internal',
     inputSchema: {
       type: 'object',
       required: ['token'],
@@ -538,7 +564,7 @@ const INTERNAL_TOOLS: ToolSpec[] = [
     name: 'circuit_breaker_status',
     description: 'Get the current circuit breaker state and statistics.',
     mutating: false,
-    internal: true,
+    execution: 'internal',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -552,7 +578,7 @@ const INTERNAL_TOOLS: ToolSpec[] = [
     name: 'compliance_report',
     description: 'Generate a compliance report from the audit log.',
     mutating: false,
-    internal: true,
+    execution: 'internal',
     inputSchema: {
       type: 'object',
       required: ['format'],
@@ -574,9 +600,124 @@ const INTERNAL_TOOLS: ToolSpec[] = [
       return { argv: [], guardArgs: { ...args } };
     },
   },
+  {
+    name: 'budget_status',
+    description: 'Get remaining session, agent, and category budgets.',
+    mutating: false,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, []);
+      return { argv: [], guardArgs: {} };
+    },
+  },
+  {
+    name: 'runtime_status',
+    description: 'Get runtime readiness, capital controls, and pending approval context.',
+    mutating: false,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, []);
+      return { argv: [], guardArgs: {} };
+    },
+  },
+  {
+    name: 'approval_status',
+    description: 'Look up the current status of a Veto approval request.',
+    mutating: false,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      required: ['approvalId'],
+      properties: {
+        approvalId: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['approvalId']);
+      const approvalId = asString(args.approvalId, 'approvalId');
+      return { argv: [], guardArgs: { approvalId } };
+    },
+  },
 ];
 
-export const TOOL_SPECS: ToolSpec[] = [...READ_ONLY_TOOLS, ...MUTATING_TOOLS, ...INTERNAL_TOOLS];
+const X402_TOOLS: ToolSpec[] = [
+  {
+    name: 'intel_search',
+    description: 'Query a paid research endpoint through x402 for market intelligence.',
+    mutating: false,
+    execution: 'x402',
+    priced: true,
+    economicCategory: 'x402_research',
+    inputSchema: {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number', minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['query', 'limit']);
+      const query = asString(args.query, 'query');
+      const limit = maybePositiveNumber(args.limit, 'limit');
+      return {
+        argv: [],
+        guardArgs: {
+          query,
+          limit,
+          x402_tool: 'intelSearch',
+        },
+      };
+    },
+  },
+  {
+    name: 'intel_market_context',
+    description: 'Fetch paid research context for a market, event, or token through x402.',
+    mutating: false,
+    execution: 'x402',
+    priced: true,
+    economicCategory: 'x402_research',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        market: { type: 'string' },
+        event: { type: 'string' },
+        token: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['market', 'event', 'token']);
+      const market = maybeString(args.market, 'market');
+      const event = maybeString(args.event, 'event');
+      const token = maybeString(args.token, 'token');
+      if (!market && !event && !token) {
+        throw new Error("At least one of 'market', 'event', or 'token' is required");
+      }
+      return {
+        argv: [],
+        guardArgs: {
+          market,
+          event,
+          token,
+          x402_tool: 'intelMarketContext',
+        },
+      };
+    },
+  },
+];
+
+export const TOOL_SPECS: ToolSpec[] = [...READ_ONLY_TOOLS, ...MUTATING_TOOLS, ...INTERNAL_TOOLS, ...X402_TOOLS];
 
 const TOOL_MAP = new Map(TOOL_SPECS.map((tool) => [tool.name, tool]));
 

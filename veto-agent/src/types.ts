@@ -1,5 +1,6 @@
 import type { AuditConfig } from './audit.js';
 import type { CircuitBreakerConfig } from './circuit-breaker.js';
+import type { EconomicConfig, EconomicDecision, EconomicReceipt, X402Config } from './economic.js';
 import type { MarketAccessConfig } from './market-access.js';
 import type { MultiSigConfig } from './multi-sig.js';
 import type { PositionTrackerConfig } from './position-tracker.js';
@@ -8,6 +9,7 @@ import type { IdentityConfig } from './agent-identity.js';
 
 export type { AuditConfig } from './audit.js';
 export type { CircuitBreakerConfig } from './circuit-breaker.js';
+export type { EconomicConfig, EconomicDecision, EconomicReceipt, X402Config } from './economic.js';
 export type { MarketAccessConfig } from './market-access.js';
 export type { MultiSigConfig } from './multi-sig.js';
 export type { PositionTrackerConfig } from './position-tracker.js';
@@ -17,10 +19,18 @@ export type { IdentityConfig } from './agent-identity.js';
 export const POLICY_PROFILES = ['defaults', 'conservative', 'agent', 'user'] as const;
 export type PolicyProfile = (typeof POLICY_PROFILES)[number];
 export type McpTransport = 'stdio' | 'sse';
+export type ApprovalMode = 'wait' | 'return';
 
 export interface SidecarConfig {
   polymarket: {
     binaryPath: string;
+  };
+  runtime: {
+    agentId?: string;
+    agentIdEnv: string;
+    sessionId?: string;
+    sessionIdEnv: string;
+    approvalMode: ApprovalMode;
   };
   execution: {
     simulationDefault: boolean;
@@ -48,6 +58,8 @@ export interface SidecarConfig {
     multiSig: MultiSigConfig;
     identity: IdentityConfig;
   };
+  economic: EconomicConfig;
+  x402: X402Config;
 }
 
 export interface ResolvedConfig {
@@ -103,6 +115,29 @@ export interface RuntimeDecision {
   reason?: string;
   ruleId?: string;
   approvalId?: string;
+}
+
+export interface DecisionEnvelope {
+  decision: 'allow' | 'deny' | 'require_approval';
+  reason?: string;
+  ruleId?: string;
+  approvalId?: string;
+  reasonCode?: string;
+  economic?: EconomicDecision;
+}
+
+export interface ToolResponseEnvelope {
+  live: boolean;
+  tool: string;
+  command?: string;
+  output?: unknown;
+  simulation?: boolean;
+  reason?: string;
+  marketReference?: unknown;
+  estimatedShares?: number;
+  estimatedNotionalUsd?: number;
+  priceVsMidpoint?: number;
+  economic?: EconomicReceipt;
 }
 
 export interface RuntimeErrorShape {

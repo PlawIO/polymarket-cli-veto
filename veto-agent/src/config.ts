@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { POLICY_PROFILES, type McpTransport, type PolicyProfile, type ResolvedConfig, type SidecarConfig } from './types.js';
+import type { BudgetScopeName, X402ToolServiceConfig } from './economic.js';
+import { POLICY_PROFILES, type ApprovalMode, type McpTransport, type PolicyProfile, type ResolvedConfig, type SidecarConfig } from './types.js';
 
 const DEFAULT_CONFIG_PATHS = [
   'veto-agent/polymarket-veto.config.yaml',
@@ -11,6 +12,11 @@ const DEFAULT_CONFIG_PATHS = [
 const DEFAULTS: SidecarConfig = {
   polymarket: {
     binaryPath: 'auto',
+  },
+  runtime: {
+    agentIdEnv: 'VETO_AGENT_ID',
+    sessionIdEnv: 'VETO_SESSION_ID',
+    approvalMode: 'wait',
   },
   execution: {
     simulationDefault: true,
@@ -68,6 +74,51 @@ const DEFAULTS: SidecarConfig = {
       enabled: false,
       algorithm: 'sha256',
       agents: [],
+    },
+  },
+  economic: {
+    enabled: false,
+    approvedPayers: [],
+    scopes: ['session', 'agent', 'category'],
+    cloud: {
+      baseUrl: 'https://api.runveto.com',
+      apiKeyEnv: 'VETO_API_KEY',
+      timeoutMs: 10_000,
+      cacheTtlMs: 30_000,
+    },
+  },
+  x402: {
+    enabled: false,
+    evmPrivateKeyEnv: 'X402_EVM_PRIVATE_KEY',
+    tools: {
+      intelSearch: {
+        enabled: false,
+        url: '',
+        method: 'GET',
+        provider: 'intel-search',
+        budgetCategory: 'research',
+        maxPriceUsd: 0.05,
+        queryParam: 'q',
+        marketParam: 'market',
+        eventParam: 'event',
+        tokenParam: 'token',
+        allowedNetworks: ['eip155:8453'],
+        allowedAssets: ['USDC'],
+      },
+      intelMarketContext: {
+        enabled: false,
+        url: '',
+        method: 'GET',
+        provider: 'intel-market-context',
+        budgetCategory: 'research',
+        maxPriceUsd: 0.1,
+        queryParam: 'q',
+        marketParam: 'market',
+        eventParam: 'event',
+        tokenParam: 'token',
+        allowedNetworks: ['eip155:8453'],
+        allowedAssets: ['USDC'],
+      },
     },
   },
 };
@@ -137,6 +188,43 @@ function parseAlgorithm(value: unknown, fallback: 'sha256' | 'sha512'): 'sha256'
   return fallback;
 }
 
+function parseBudgetScopes(value: unknown, fallback: BudgetScopeName[]): BudgetScopeName[] {
+  if (!Array.isArray(value)) return fallback;
+  const scopes = value.filter((entry): entry is BudgetScopeName => (
+    entry === 'session' || entry === 'agent' || entry === 'category'
+  ));
+  return scopes.length > 0 ? scopes : fallback;
+}
+
+function parseMethod(value: unknown, fallback: 'GET' | 'POST'): 'GET' | 'POST' {
+  if (value === 'GET' || value === 'POST') return value;
+  return fallback;
+}
+
+function parseApprovalMode(value: unknown, fallback: ApprovalMode): ApprovalMode {
+  if (value === 'wait' || value === 'return') return value;
+  return fallback;
+}
+
+function mergeX402ToolConfig(raw: unknown, base: X402ToolServiceConfig): X402ToolServiceConfig {
+  const row = asRecord(raw);
+  return {
+    enabled: optionalBoolean(row.enabled) ?? base.enabled,
+    url: optionalString(row.url) ?? base.url,
+    method: parseMethod(row.method, base.method),
+    provider: optionalString(row.provider) ?? base.provider,
+    budgetCategory: optionalString(row.budgetCategory) ?? base.budgetCategory,
+    maxPriceUsd: optionalPositiveNumber(row.maxPriceUsd) ?? base.maxPriceUsd,
+    payer: optionalString(row.payer) ?? base.payer,
+    queryParam: optionalString(row.queryParam) ?? base.queryParam,
+    marketParam: optionalString(row.marketParam) ?? base.marketParam,
+    eventParam: optionalString(row.eventParam) ?? base.eventParam,
+    tokenParam: optionalString(row.tokenParam) ?? base.tokenParam,
+    allowedNetworks: optionalStringArray(row.allowedNetworks) ?? base.allowedNetworks,
+    allowedAssets: optionalStringArray(row.allowedAssets) ?? base.allowedAssets,
+  };
+}
+
 function parseAgentsList(value: unknown): Array<{ agentId: string; secretEnv: string }> | undefined {
   if (!Array.isArray(value)) return undefined;
   const result: Array<{ agentId: string; secretEnv: string }> = [];
@@ -155,6 +243,7 @@ function merge(raw: unknown, base: SidecarConfig): SidecarConfig {
   const root = asRecord(raw);
 
   const polymarket = asRecord(root.polymarket);
+  const runtime = asRecord(root.runtime);
   const execution = asRecord(root.execution);
   const mcp = asRecord(root.mcp);
   const veto = asRecord(root.veto);
@@ -166,10 +255,21 @@ function merge(raw: unknown, base: SidecarConfig): SidecarConfig {
   const circuitBreaker = asRecord(execution.circuitBreaker);
   const multiSig = asRecord(veto.multiSig);
   const identity = asRecord(veto.identity);
+  const economic = asRecord(root.economic);
+  const economicCloud = asRecord(economic.cloud);
+  const x402 = asRecord(root.x402);
+  const x402Tools = asRecord(x402.tools);
 
   return {
     polymarket: {
       binaryPath: optionalString(polymarket.binaryPath) ?? base.polymarket.binaryPath,
+    },
+    runtime: {
+      agentId: optionalString(runtime.agentId) ?? base.runtime.agentId,
+      agentIdEnv: optionalString(runtime.agentIdEnv) ?? base.runtime.agentIdEnv,
+      sessionId: optionalString(runtime.sessionId) ?? base.runtime.sessionId,
+      sessionIdEnv: optionalString(runtime.sessionIdEnv) ?? base.runtime.sessionIdEnv,
+      approvalMode: parseApprovalMode(runtime.approvalMode, base.runtime.approvalMode),
     },
     execution: {
       simulationDefault: optionalBoolean(execution.simulationDefault) ?? base.execution.simulationDefault,
@@ -231,6 +331,26 @@ function merge(raw: unknown, base: SidecarConfig): SidecarConfig {
         agents: parseAgentsList(identity.agents) ?? base.veto.identity.agents,
       },
     },
+    economic: {
+      enabled: optionalBoolean(economic.enabled) ?? base.economic.enabled,
+      defaultPayer: optionalString(economic.defaultPayer) ?? base.economic.defaultPayer,
+      approvedPayers: optionalStringArray(economic.approvedPayers) ?? base.economic.approvedPayers,
+      scopes: parseBudgetScopes(economic.scopes, base.economic.scopes),
+      cloud: {
+        baseUrl: optionalString(economicCloud.baseUrl) ?? base.economic.cloud.baseUrl,
+        apiKeyEnv: optionalString(economicCloud.apiKeyEnv) ?? base.economic.cloud.apiKeyEnv,
+        timeoutMs: optionalPositiveInt(economicCloud.timeoutMs) ?? base.economic.cloud.timeoutMs,
+        cacheTtlMs: optionalPositiveInt(economicCloud.cacheTtlMs) ?? base.economic.cloud.cacheTtlMs,
+      },
+    },
+    x402: {
+      enabled: optionalBoolean(x402.enabled) ?? base.x402.enabled,
+      evmPrivateKeyEnv: optionalString(x402.evmPrivateKeyEnv) ?? base.x402.evmPrivateKeyEnv,
+      tools: {
+        intelSearch: mergeX402ToolConfig(x402Tools.intelSearch, base.x402.tools.intelSearch),
+        intelMarketContext: mergeX402ToolConfig(x402Tools.intelMarketContext, base.x402.tools.intelMarketContext),
+      },
+    },
   };
 }
 
@@ -279,6 +399,7 @@ export function toJsonSafeConfig(config: SidecarConfig): SidecarConfig {
   return {
     ...config,
     polymarket: { ...config.polymarket },
+    runtime: { ...config.runtime },
     execution: {
       ...config.execution,
       tradeLimits: { ...config.execution.tradeLimits },
@@ -293,6 +414,27 @@ export function toJsonSafeConfig(config: SidecarConfig): SidecarConfig {
       cloud: { ...config.veto.cloud },
       multiSig: { ...config.veto.multiSig },
       identity: { ...config.veto.identity },
+    },
+    economic: {
+      ...config.economic,
+      approvedPayers: [...config.economic.approvedPayers],
+      scopes: [...config.economic.scopes],
+      cloud: { ...config.economic.cloud },
+    },
+    x402: {
+      ...config.x402,
+      tools: {
+        intelSearch: {
+          ...config.x402.tools.intelSearch,
+          allowedNetworks: [...config.x402.tools.intelSearch.allowedNetworks],
+          allowedAssets: [...config.x402.tools.intelSearch.allowedAssets],
+        },
+        intelMarketContext: {
+          ...config.x402.tools.intelMarketContext,
+          allowedNetworks: [...config.x402.tools.intelMarketContext.allowedNetworks],
+          allowedAssets: [...config.x402.tools.intelMarketContext.allowedAssets],
+        },
+      },
     },
   };
 }

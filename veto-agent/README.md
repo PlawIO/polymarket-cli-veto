@@ -102,6 +102,14 @@ How each profile handles representative scenarios during weekday business hours:
 
 `order_create_limit`, `order_market`, `order_cancel`, `order_cancel_all`, `approve_set`, `ctf_split`, `ctf_merge`, `ctf_redeem`
 
+**Internal controls**:
+
+`audit_query`, `pnl_snapshot`, `pnl_position`, `circuit_breaker_status`, `compliance_report`, `budget_status`, `runtime_status`, `approval_status`
+
+**Paid research** (x402 + economic authorization):
+
+`intel_search`, `intel_market_context`
+
 **Architecturally excluded** (not registered as MCP tools):
 
 `wallet_import`, `wallet_reset`, `clob_delete_api_key`
@@ -113,6 +121,8 @@ These return `-32601 Unknown tool` if called — the guard is never invoked.
 ```bash
 polymarket-veto-mcp serve [options]    # Start MCP server
 polymarket-veto-mcp doctor             # Diagnose binary, config, rules
+polymarket-veto-mcp status             # Show runtime readiness and capital control state
+polymarket-veto-mcp approval-status --approval-id <id>
 polymarket-veto-mcp print-tools        # List registered MCP tools
 polymarket-veto-mcp print-config       # Dump resolved config
 ```
@@ -129,6 +139,28 @@ Live execution requires **all three**:
 2. `execution.allowLiveTrades: true` in `polymarket-veto.config.yaml`
 3. `ALLOW_LIVE_TRADES=true` environment variable
 
+x402 research tools also respect `simulationDefault`, but they stop at price discovery in simulation mode. No x402 payment is settled until simulation is off.
+
+## Approval flow
+
+Approval handling is configurable:
+
+- `runtime.approvalMode: return` returns immediately with `approvalId`, `pending: true`, and budget context so the agent can keep going and poll with `approval_status`.
+- `runtime.approvalMode: wait` preserves the original blocking behavior and polls until approval resolves or times out.
+
+The sample config defaults to `return` for a better agent UX. If you run without a config file, the runtime still defaults to `wait` for compatibility.
+
+## Economic authorization
+
+The MCP runtime can treat both orders and x402 spend as budgeted actions under one authority:
+
+- Trade notional is authorized before `order_create_limit`, `order_market`, `ctf_split`, and `ctf_merge`.
+- Paid research spend is authorized before `intel_search` and `intel_market_context`.
+- `budget_status` returns remaining session, agent, and category budgets plus pending approvals.
+- Live priced actions fail closed if the economic authority is unavailable. Simulation can return a cached preview when recent budget state exists.
+
+Priced tool responses now include an `economic` object with quoted or actual spend, payer, approval metadata, and the current budget snapshot.
+
 ## Configuration
 
 Config path: `polymarket-veto.config.yaml` (searched in cwd, then defaults).
@@ -136,6 +168,13 @@ Config path: `polymarket-veto.config.yaml` (searched in cwd, then defaults).
 ```yaml
 polymarket:
   binaryPath: auto            # auto | command name | explicit path
+
+runtime:
+  agentId: ""                 # optional fixed agent id
+  agentIdEnv: VETO_AGENT_ID   # env override for agent id
+  sessionId: ""               # optional fixed session id
+  sessionIdEnv: VETO_SESSION_ID
+  approvalMode: return        # return | wait
 
 execution:
   simulationDefault: true
@@ -153,6 +192,42 @@ veto:
   policyProfile: defaults
   cloud:
     apiKeyEnv: VETO_API_KEY
+
+economic:
+  enabled: false
+  defaultPayer: trader-wallet
+  approvedPayers: [trader-wallet, research-wallet]
+  scopes: [session, agent, category]
+  cloud:
+    baseUrl: https://api.runveto.com
+    apiKeyEnv: VETO_API_KEY
+    timeoutMs: 10000
+    cacheTtlMs: 30000
+
+x402:
+  enabled: false
+  evmPrivateKeyEnv: X402_EVM_PRIVATE_KEY
+  tools:
+    intelSearch:
+      enabled: false
+      url: https://intel.example/search
+      method: GET
+      provider: intel-search
+      budgetCategory: research
+      maxPriceUsd: 0.05
+      payer: research-wallet
+      allowedNetworks: [eip155:8453]
+      allowedAssets: [USDC]
+    intelMarketContext:
+      enabled: false
+      url: https://intel.example/context
+      method: GET
+      provider: intel-market-context
+      budgetCategory: research
+      maxPriceUsd: 0.10
+      payer: research-wallet
+      allowedNetworks: [eip155:8453]
+      allowedAssets: [USDC]
 ```
 
 ### Cloud mode (optional)
@@ -164,6 +239,14 @@ export VETO_API_KEY=veto_xxx
 ```
 
 Then set `validation.mode: cloud` in `veto/veto.config.yaml`.
+
+If you enable x402 settlement, also provide:
+
+```bash
+export X402_EVM_PRIVATE_KEY=0x...
+```
+
+The runtime only settles x402 requests when the quoted price is within `maxPriceUsd`, the payer is approved by `economic`, and simulation is off.
 
 ## Development
 
@@ -181,7 +264,7 @@ npm run simulate     # run policy decision table across all profiles
 Tests cover three layers:
 
 - **Policy evaluation** (`tests/policy.test.ts`) — exercises real YAML rules through `Veto.init()` with local validation. Tests all four profiles across order sizing, price discipline, sell-side, FOK limits, timestamp conditions, and CTF blocking. Includes a cross-profile CTF regression suite.
-- **Runtime decisions** (`tests/runtime.test.ts`) — tests the MCP runtime's decision mapping (deny, approval, simulation), approval polling, and wallet tool boundary rejection.
+- **Runtime decisions** (`tests/runtime.test.ts`) — tests denial/approval mapping, async approval return mode, approval lookup, runtime status, simulation behavior, budget status, economic denial, x402 previews, and wallet tool boundary rejection.
 - **Tool building** (`tests/tools.test.ts`) — validates CLI argument construction and guard argument computation for each tool.
 
 ### Simulate

@@ -20,6 +20,10 @@
     "simulate": "tsx simulate-trades.ts"
   },
   "dependencies": {
+    "@x402/axios": "^2.6.0",
+    "@x402/evm": "^2.6.0",
+    "axios": "^1.13.6",
+    "viem": "^2.47.1",
     "veto-sdk": "^1.17.0",
     "yaml": "^2.8.2"
   },

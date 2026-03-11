@@ -1,6 +1,13 @@
 polymarket:
   binaryPath: auto
 
+runtime:
+  agentId: ""
+  agentIdEnv: VETO_AGENT_ID
+  sessionId: ""
+  sessionIdEnv: VETO_SESSION_ID
+  approvalMode: return
+
 execution:
   simulationDefault: true
   allowLiveTrades: false
@@ -52,3 +59,54 @@ veto:
     enabled: false
     algorithm: sha256
     agents: []
+
+economic:
+  enabled: false
+  defaultPayer: ""
+  approvedPayers: []
+  scopes:
+    - session
+    - agent
+    - category
+  cloud:
+    baseUrl: https://api.runveto.com
+    apiKeyEnv: VETO_API_KEY
+    timeoutMs: 10000
+    cacheTtlMs: 30000
+
+x402:
+  enabled: false
+  evmPrivateKeyEnv: X402_EVM_PRIVATE_KEY
+  tools:
+    intelSearch:
+      enabled: false
+      url: ""
+      method: GET
+      provider: intel-search
+      budgetCategory: research
+      maxPriceUsd: 0.05
+      payer: research-wallet
+      queryParam: q
+      marketParam: market
+      eventParam: event
+      tokenParam: token
+      allowedNetworks:
+        - eip155:8453
+      allowedAssets:
+        - USDC
+    intelMarketContext:
+      enabled: false
+      url: ""
+      method: GET
+      provider: intel-market-context
+      budgetCategory: research
+      maxPriceUsd: 0.10
+      payer: research-wallet
+      queryParam: q
+      marketParam: market
+      eventParam: event
+      tokenParam: token
+      allowedNetworks:
+        - eip155:8453
+      allowedAssets:
+        - USDC

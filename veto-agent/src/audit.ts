@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { EconomicDecision, EconomicReceipt } from './economic.js';
 
 export interface AuditEntry {
   id: string;
@@ -11,6 +12,8 @@ export interface AuditEntry {
   decision: string;
   reason?: string;
   ruleId?: string;
+  economicDecision?: EconomicDecision;
+  economicReceipt?: EconomicReceipt;
   executionResult?: {
     ok: boolean;
     exitCode?: number;

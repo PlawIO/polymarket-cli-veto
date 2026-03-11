@@ -18,7 +18,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const values: Record<string, string> = {};
   let command = '';
 
-  const valueFlags = new Set(['config', 'policy-profile', 'simulation', 'transport', 'host', 'port', 'format', 'period', 'start', 'end', 'output']);
+  const valueFlags = new Set(['config', 'policy-profile', 'simulation', 'transport', 'host', 'port', 'format', 'period', 'start', 'end', 'output', 'approval-id']);
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -72,6 +72,8 @@ polymarket-veto-mcp
 Usage:
   polymarket-veto-mcp serve [--config <path>] [--policy-profile ${POLICY_PROFILES.join('|')}] [--simulation on|off] [--transport stdio|sse]
   polymarket-veto-mcp doctor [--config <path>]
+  polymarket-veto-mcp status [--config <path>]
+  polymarket-veto-mcp approval-status --approval-id <id> [--config <path>]
   polymarket-veto-mcp print-config [--config <path>]
   polymarket-veto-mcp print-tools [--config <path>]
   polymarket-veto-mcp export [--format csv|json] [--period day|week|month] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--output path]
@@ -157,6 +159,25 @@ async function main(): Promise<void> {
     const report = await runtime.doctor();
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.ok === true ? 0 : 1;
+    return;
+  }
+
+  if (command === 'status') {
+    const report = await runtime.status();
+    console.log(JSON.stringify(report, null, 2));
+    process.exitCode = report.ok === true ? 0 : 1;
+    return;
+  }
+
+  if (command === 'approval-status') {
+    const approvalId = parsed.values['approval-id'];
+    if (!approvalId) {
+      throw new Error('Missing --approval-id value');
+    }
+
+    const report = await runtime.getApprovalStatus(approvalId);
+    console.log(JSON.stringify(report, null, 2));
+    process.exitCode = report.healthy === true || report.status !== 'unknown' ? 0 : 1;
     return;
   }
 

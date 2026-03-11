@@ -17,6 +17,7 @@ export interface ToolSpec {
   name: string;
   description: string;
   mutating: boolean;
+  internal?: boolean;
   inputSchema: ToolSchema;
   build(args: Record<string, unknown>): CommandBuildResult;
 }
@@ -479,7 +480,103 @@ const MUTATING_TOOLS: ToolSpec[] = [
   },
 ];
 
-export const TOOL_SPECS: ToolSpec[] = [...READ_ONLY_TOOLS, ...MUTATING_TOOLS];
+const INTERNAL_TOOLS: ToolSpec[] = [
+  {
+    name: 'audit_query',
+    description: 'Query the audit log for recent decisions and trade history.',
+    mutating: false,
+    internal: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'string', description: 'ISO timestamp to filter entries after' },
+        agentId: { type: 'string' },
+        toolName: { type: 'string' },
+        limit: { type: 'number', minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['since', 'agentId', 'toolName', 'limit']);
+      return { argv: [], guardArgs: { ...args } };
+    },
+  },
+  {
+    name: 'pnl_snapshot',
+    description: 'Get a snapshot of all positions with realized and unrealized P&L.',
+    mutating: false,
+    internal: true,
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, []);
+      return { argv: [], guardArgs: {} };
+    },
+  },
+  {
+    name: 'pnl_position',
+    description: 'Get position details for a specific token.',
+    mutating: false,
+    internal: true,
+    inputSchema: {
+      type: 'object',
+      required: ['token'],
+      properties: {
+        token: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['token']);
+      const token = asString(args.token, 'token');
+      return { argv: [], guardArgs: { token } };
+    },
+  },
+  {
+    name: 'circuit_breaker_status',
+    description: 'Get the current circuit breaker state and statistics.',
+    mutating: false,
+    internal: true,
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, []);
+      return { argv: [], guardArgs: {} };
+    },
+  },
+  {
+    name: 'compliance_report',
+    description: 'Generate a compliance report from the audit log.',
+    mutating: false,
+    internal: true,
+    inputSchema: {
+      type: 'object',
+      required: ['format'],
+      properties: {
+        format: { type: 'string', enum: ['csv', 'json'] },
+        period: { type: 'string', enum: ['day', 'week', 'month'] },
+        startDate: { type: 'string' },
+        endDate: { type: 'string' },
+        outputPath: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['format', 'period', 'startDate', 'endDate', 'outputPath']);
+      const format = asString(args.format, 'format');
+      if (format !== 'csv' && format !== 'json') {
+        throw new Error("Invalid 'format': expected csv|json");
+      }
+      return { argv: [], guardArgs: { ...args } };
+    },
+  },
+];
+
+export const TOOL_SPECS: ToolSpec[] = [...READ_ONLY_TOOLS, ...MUTATING_TOOLS, ...INTERNAL_TOOLS];
 
 const TOOL_MAP = new Map(TOOL_SPECS.map((tool) => [tool.name, tool]));
 

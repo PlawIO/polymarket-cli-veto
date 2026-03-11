@@ -19,6 +19,34 @@ function makeConfig(): ResolvedConfig {
         allowLiveTrades: false,
         maxCommandTimeoutMs: 10_000,
         maxOutputBytes: 1_048_576,
+        tradeLimits: {
+          enabled: false,
+          maxPositionSizeUsd: 500,
+          dailyVolumeLimitUsd: 1000,
+        },
+        marketAccess: {
+          enabled: false,
+          mode: 'blocklist',
+          tokens: [],
+          categories: [],
+        },
+        circuitBreaker: {
+          enabled: false,
+          maxConsecutiveLosses: 5,
+          maxLossRatePercent: 70,
+          pnlVelocityThresholdUsd: -100,
+          windowMinutes: 60,
+          cooldownMinutes: 15,
+        },
+      },
+      audit: {
+        enabled: false,
+        filePath: './data/audit.jsonl',
+        maxFileSizeMb: 50,
+      },
+      positions: {
+        enabled: false,
+        dataFilePath: './data/positions.json',
       },
       mcp: {
         transport: 'stdio',
@@ -31,6 +59,17 @@ function makeConfig(): ResolvedConfig {
         policyProfile: 'defaults',
         cloud: {
           apiKeyEnv: 'VETO_API_KEY',
+        },
+        multiSig: {
+          enabled: false,
+          minApprovals: 2,
+          thresholdUsd: 100,
+          approvalTimeoutMs: 600_000,
+        },
+        identity: {
+          enabled: false,
+          algorithm: 'sha256',
+          agents: [],
         },
       },
     },

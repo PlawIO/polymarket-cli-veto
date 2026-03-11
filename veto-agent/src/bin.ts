@@ -4,6 +4,8 @@ import { loadConfig, toJsonSafeConfig } from './config.js';
 import { serveSse, serveStdio } from './mcp.js';
 import { PolymarketVetoRuntime } from './runtime.js';
 import { POLICY_PROFILES, type McpTransport, type PolicyProfile } from './types.js';
+import { AuditLogger } from './audit.js';
+import { ComplianceExporter } from './compliance.js';
 
 interface ParsedArgs {
   command: string;
@@ -16,7 +18,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const values: Record<string, string> = {};
   let command = '';
 
-  const valueFlags = new Set(['config', 'policy-profile', 'simulation', 'transport', 'host', 'port']);
+  const valueFlags = new Set(['config', 'policy-profile', 'simulation', 'transport', 'host', 'port', 'format', 'period', 'start', 'end', 'output']);
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -72,6 +74,7 @@ Usage:
   polymarket-veto-mcp doctor [--config <path>]
   polymarket-veto-mcp print-config [--config <path>]
   polymarket-veto-mcp print-tools [--config <path>]
+  polymarket-veto-mcp export [--format csv|json] [--period day|week|month] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--output path]
 `);
 }
 
@@ -114,6 +117,29 @@ async function main(): Promise<void> {
       configPath: resolved.path,
       source: resolved.source,
       config: toJsonSafeConfig(resolved.config),
+    }, null, 2));
+    return;
+  }
+
+  if (command === 'export') {
+    const format = parsed.values.format === 'csv' ? 'csv' : 'json';
+    const period = parsed.values.period as 'day' | 'week' | 'month' | undefined;
+    const outputPath = parsed.values.output ?? `./data/reports/report-${Date.now()}.${format}`;
+
+    const auditLogger = new AuditLogger(resolved.config.audit);
+    const exporter = new ComplianceExporter(auditLogger);
+
+    const report = exporter.generateReport({
+      format,
+      period,
+      startDate: parsed.values.start,
+      endDate: parsed.values.end,
+      outputPath,
+    });
+
+    console.log(JSON.stringify({
+      outputPath: report.outputPath,
+      summary: report.summary,
     }, null, 2));
     return;
   }

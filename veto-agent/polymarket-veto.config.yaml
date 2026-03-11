@@ -6,6 +6,31 @@ execution:
   allowLiveTrades: false
   maxCommandTimeoutMs: 15000
   maxOutputBytes: 1048576
+  tradeLimits:
+    enabled: true
+    maxPositionSizeUsd: 500
+    dailyVolumeLimitUsd: 1000
+  marketAccess:
+    enabled: false
+    mode: blocklist
+    tokens: []
+    categories: []
+  circuitBreaker:
+    enabled: false
+    maxConsecutiveLosses: 5
+    maxLossRatePercent: 70
+    pnlVelocityThresholdUsd: -100
+    windowMinutes: 60
+    cooldownMinutes: 15
+
+audit:
+  enabled: true
+  filePath: ./data/audit.jsonl
+  maxFileSizeMb: 50
+
+positions:
+  enabled: true
+  dataFilePath: ./data/positions.json
 
 mcp:
   transport: stdio
@@ -18,3 +43,12 @@ veto:
   policyProfile: defaults
   cloud:
     apiKeyEnv: VETO_API_KEY
+  multiSig:
+    enabled: false
+    minApprovals: 2
+    thresholdUsd: 100
+    approvalTimeoutMs: 600000
+  identity:
+    enabled: false
+    algorithm: sha256
+    agents: []

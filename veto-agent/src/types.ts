@@ -1,3 +1,19 @@
+import type { AuditConfig } from './audit.js';
+import type { CircuitBreakerConfig } from './circuit-breaker.js';
+import type { MarketAccessConfig } from './market-access.js';
+import type { MultiSigConfig } from './multi-sig.js';
+import type { PositionTrackerConfig } from './position-tracker.js';
+import type { TradeLimitsConfig } from './trade-tracker.js';
+import type { IdentityConfig } from './agent-identity.js';
+
+export type { AuditConfig } from './audit.js';
+export type { CircuitBreakerConfig } from './circuit-breaker.js';
+export type { MarketAccessConfig } from './market-access.js';
+export type { MultiSigConfig } from './multi-sig.js';
+export type { PositionTrackerConfig } from './position-tracker.js';
+export type { TradeLimitsConfig } from './trade-tracker.js';
+export type { IdentityConfig } from './agent-identity.js';
+
 export const POLICY_PROFILES = ['defaults', 'conservative', 'agent', 'user'] as const;
 export type PolicyProfile = (typeof POLICY_PROFILES)[number];
 export type McpTransport = 'stdio' | 'sse';
@@ -11,7 +27,12 @@ export interface SidecarConfig {
     allowLiveTrades: boolean;
     maxCommandTimeoutMs: number;
     maxOutputBytes: number;
+    tradeLimits: TradeLimitsConfig;
+    marketAccess: MarketAccessConfig;
+    circuitBreaker: CircuitBreakerConfig;
   };
+  audit: AuditConfig;
+  positions: PositionTrackerConfig;
   mcp: {
     transport: McpTransport;
     host: string;
@@ -24,6 +45,8 @@ export interface SidecarConfig {
     cloud: {
       apiKeyEnv: string;
     };
+    multiSig: MultiSigConfig;
+    identity: IdentityConfig;
   };
 }
 

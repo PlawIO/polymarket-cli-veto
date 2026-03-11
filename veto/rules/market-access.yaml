@@ -1,0 +1,15 @@
+# Optional static blocklist using Veto rule engine
+# Disabled by default — enable by uncommenting conditions
+# This provides an additional layer of market access control
+# via YAML rules alongside the runtime MarketAccessControl
+
+# - id: blocklist-tokens
+#   tool: order_*
+#   when:
+#     - field: arguments.token
+#       operator: in
+#       value:
+#         - "blocked-token-1"
+#         - "blocked-token-2"
+#   decision: deny
+#   reason: "Token is blocklisted via market-access rule"

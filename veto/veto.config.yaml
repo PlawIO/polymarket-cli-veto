@@ -2,7 +2,7 @@ version: "1.0"
 mode: strict
 
 validation:
-  mode: cloud
+  mode: local
 
 cloud:
   baseUrl: https://api.runveto.com

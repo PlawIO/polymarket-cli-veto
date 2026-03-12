@@ -199,7 +199,7 @@ economic:
   approvedPayers: [trader-wallet, research-wallet]
   scopes: [session, agent, category]
   cloud:
-    baseUrl: https://api.runveto.com
+    baseUrl: https://api.veto.so
     apiKeyEnv: VETO_API_KEY
     timeoutMs: 10000
     cacheTtlMs: 30000

@@ -82,7 +82,7 @@ function makeConfig(): ResolvedConfig {
         approvedPayers: [],
         scopes: ['session', 'agent', 'category'],
         cloud: {
-          baseUrl: 'https://api.runveto.com',
+          baseUrl: 'https://api.veto.so',
           apiKeyEnv: 'VETO_API_KEY',
           timeoutMs: 10_000,
           cacheTtlMs: 30_000,
@@ -670,7 +670,7 @@ describe('runtime decisions', () => {
         'validation:',
         '  mode: cloud',
         'cloud:',
-        '  baseUrl: https://api.runveto.com',
+        '  baseUrl: https://api.veto.so',
         'approval:',
         '  pollInterval: 10',
         '  timeout: 1000',

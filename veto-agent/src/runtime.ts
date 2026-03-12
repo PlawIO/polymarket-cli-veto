@@ -1254,7 +1254,7 @@ export class PolymarketVetoRuntime {
       });
     }
 
-    let baseUrl = 'https://api.runveto.com';
+    let baseUrl = 'https://api.veto.so';
     let pollIntervalMs = 2_000;
     let timeoutMs = 300_000;
 

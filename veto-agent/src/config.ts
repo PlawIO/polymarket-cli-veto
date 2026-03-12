@@ -81,7 +81,7 @@ const DEFAULTS: SidecarConfig = {
     approvedPayers: [],
     scopes: ['session', 'agent', 'category'],
     cloud: {
-      baseUrl: 'https://api.runveto.com',
+      baseUrl: 'https://api.veto.so',
       apiKeyEnv: 'VETO_API_KEY',
       timeoutMs: 10_000,
       cacheTtlMs: 30_000,

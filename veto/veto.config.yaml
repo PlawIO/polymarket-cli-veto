@@ -5,7 +5,7 @@ validation:
   mode: local
 
 cloud:
-  baseUrl: https://api.runveto.com
+  baseUrl: https://api.veto.so
   timeout: 30000
   retries: 2
 

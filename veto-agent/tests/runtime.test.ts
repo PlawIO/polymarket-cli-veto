@@ -88,6 +88,13 @@ function makeConfig(): ResolvedConfig {
           cacheTtlMs: 30_000,
         },
       },
+      marketContext: {
+        enabled: true,
+        ttlMs: 30_000,
+      },
+      sessionPolicy: {
+        overlayDir: 'rules',
+      },
       x402: {
         enabled: false,
         evmPrivateKeyEnv: 'X402_EVM_PRIVATE_KEY',
@@ -347,9 +354,10 @@ describe('runtime decisions', () => {
     expect(payload.simulation).toBe(true);
     expect(payload.estimatedShares).toBe(40);
 
-    // midpoint lookup should happen, live command should not execute.
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual(['clob', 'midpoint', '1']);
+    // context lookup + midpoint lookup should happen, live command should not execute.
+    expect(calls).toHaveLength(2);
+    expect(calls).toContainEqual(['markets', 'get', '1']);
+    expect(calls).toContainEqual(['clob', 'midpoint', '1']);
   });
 
   it('returns budget status from the economic authority', async () => {

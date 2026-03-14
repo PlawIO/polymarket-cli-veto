@@ -18,8 +18,8 @@ importers:
         specifier: ^1.13.6
         version: 1.13.6
       veto-sdk:
-        specifier: ^1.17.0
-        version: 1.17.0(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)(zod@3.25.76)
+        specifier: ^2.0.0
+        version: 2.0.0(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)(zod@3.25.76)
       viem:
         specifier: ^2.47.1
         version: 2.47.1(typescript@5.9.3)(zod@3.25.76)
@@ -1247,8 +1247,8 @@ packages:
   valid-url@1.0.9:
     resolution: {integrity: sha512-QQDsV8OnSf5Uc30CKSwG9lnhMPe6exHtTXLRYX8uMwKENy640pU+2BgBL0LRbDh/eYRahNCS7aewCx0wf3NYVA==}
 
-  veto-sdk@1.17.0:
-    resolution: {integrity: sha512-xIc7pItdWlZSATemfiik/atNjAdFRtmT1BoY2sfWyTkrGGhNlIZTgfiQlLIqv9MnOnb7b696ZzoUIpQRmkGDhg==}
+  veto-sdk@2.0.0:
+    resolution: {integrity: sha512-uavVviKTgPnecw5H+N4XMoYfzWXy+/MRn2+1LvIWAUAO5jysh7YI0hehq9MIHzpDEZmsuouyJu75WLymWQ94DA==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     peerDependencies:
@@ -2644,7 +2644,7 @@ snapshots:
 
   valid-url@1.0.9: {}
 
-  veto-sdk@1.17.0(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)(zod@3.25.76):
+  veto-sdk@2.0.0(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)(zod@3.25.76):
     dependencies:
       '@opentui/core': 0.1.84(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)
       ajv: 8.18.0

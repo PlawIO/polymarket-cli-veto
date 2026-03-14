@@ -15,6 +15,8 @@ import { MultiSigManager } from './multi-sig.js';
 import { PositionTracker } from './position-tracker.js';
 import { TradeTracker } from './trade-tracker.js';
 import { getToolSpec, listTools, profileAgentId, type ToolSpec } from './tools.js';
+import { MarketContextResolver, type MarketContext } from './market-context.js';
+import { PolicyManager, type RequiredPolicyContexts } from './policy-manager.js';
 import type {
   ApprovalMode,
   DecisionEnvelope,
@@ -27,8 +29,31 @@ import type {
 } from './types.js';
 import { X402ToolError, X402ToolRuntime, type X402PreflightResult } from './x402.js';
 
+interface GuardDecisionContext {
+  sessionId: string;
+  agentId: string;
+  custom?: Record<string, unknown>;
+  market?: Record<string, unknown>;
+  budget?: Record<string, unknown>;
+  portfolio?: Record<string, unknown>;
+}
+
 interface GuardClient {
-  guard(toolName: string, args: Record<string, unknown>, context: { sessionId: string; agentId: string }): Promise<RuntimeDecision>;
+  guard(toolName: string, args: Record<string, unknown>, context: GuardDecisionContext): Promise<RuntimeDecision>;
+  reloadLocalRules?(): Promise<void>;
+}
+
+interface PolicyManagerLike {
+  create(input: { prompt: string; toolName?: string }): Promise<unknown>;
+  list(): Promise<unknown>;
+  tighten(input: { ruleId: string; newCondition: Record<string, unknown> }): Promise<unknown>;
+  requestEdit(input: { ruleId: string; changes: Record<string, unknown> }): Promise<unknown>;
+  getRequiredContexts(): Promise<RequiredPolicyContexts>;
+}
+
+interface MarketContextResolverLike {
+  resolve(token: string): Promise<MarketContext | null>;
+  clear(): void;
 }
 
 interface RuntimeDependencies {
@@ -37,6 +62,16 @@ interface RuntimeDependencies {
   waitForApproval?: (approvalId: string) => Promise<ApprovalResolution>;
   economicClient?: EconomicCloudClient;
   x402Runtime?: X402ToolRuntime;
+  policyManager?: PolicyManagerLike;
+  marketContextResolver?: MarketContextResolverLike;
+}
+
+interface PolicyContextEnvelope {
+  market?: Record<string, unknown>;
+  budget?: Record<string, unknown>;
+  portfolio?: Record<string, unknown>;
+  custom: Record<string, unknown>;
+  missingRequiredContexts: string[];
 }
 
 interface ApprovalResolution {
@@ -103,6 +138,57 @@ function extractMidpoint(value: unknown): number | null {
   return asNumber(row.midpoint) ?? asNumber(row.mid) ?? asNumber(row.price) ?? null;
 }
 
+function asRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = asNumber(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const parsed = optionalString(value);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {
+  for (const value of values) {
+    const record = asRecordOrUndefined(value);
+    if (record) {
+      return record;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const nested = asRecordOrUndefined(entry);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function roundNumber(value: number): number {
+  return Number(value.toFixed(8));
+}
+
 function uniqueReasons(...reasons: Array<string | undefined>): string | undefined {
   const joined = [...new Set(reasons.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
   return joined.length > 0 ? joined.join('; ') : undefined;
@@ -135,6 +221,8 @@ export class PolymarketVetoRuntime {
   private readonly multiSig: MultiSigManager;
   private readonly agentIdentity: AgentIdentity;
   private readonly complianceExporter: ComplianceExporter;
+  private readonly policyManager: PolicyManagerLike;
+  private readonly marketContextResolver: MarketContextResolverLike;
 
   private constructor(
     private readonly resolved: ResolvedConfig,
@@ -171,6 +259,7 @@ export class PolymarketVetoRuntime {
     }
 
     const cfg = this.resolved.config;
+    const marketContextConfig = this.getMarketContextConfig();
     this.auditLogger = new AuditLogger(cfg.audit);
     this.marketAccess = new MarketAccessControl(cfg.execution.marketAccess);
     this.tradeTracker = new TradeTracker();
@@ -181,6 +270,19 @@ export class PolymarketVetoRuntime {
     this.complianceExporter = new ComplianceExporter(this.auditLogger);
     this.economicAuthorizer = new EconomicAuthorizer(cfg.economic, deps.economicClient ? { client: deps.economicClient } : {});
     this.x402Runtime = deps.x402Runtime ?? new X402ToolRuntime(cfg.x402);
+    this.marketContextResolver = deps.marketContextResolver ?? new MarketContextResolver({
+      ttlMs: marketContextConfig.ttlMs,
+      load: async (token) => await this.fetchMarketContext(token),
+    });
+    this.policyManager = deps.policyManager ?? new PolicyManager({
+      projectDir: this.resolved.baseDir,
+      vetoConfigDir: resolve(this.resolved.baseDir, cfg.veto.configDir),
+      sessionId: this.sessionId,
+      overlayDir: this.getSessionPolicyOverlayDir(),
+      reloadRules: async () => {
+        await this.guard.reloadLocalRules?.();
+      },
+    });
   }
 
   static async create(resolved: ResolvedConfig, deps: RuntimeDependencies = {}): Promise<PolymarketVetoRuntime> {
@@ -190,9 +292,15 @@ export class PolymarketVetoRuntime {
         configDir: vetoConfigDir,
         logLevel: 'silent',
       });
+      const reloadableVeto = veto as Veto & { reloadLocalRules?: () => Promise<void> };
 
       deps.guard = {
-        guard: (toolName, args, context) => veto.guard(toolName, args, context),
+        guard: (toolName, args, context) => veto.guard(toolName, args, context as never),
+        reloadLocalRules: async () => {
+          if (typeof reloadableVeto.reloadLocalRules === 'function') {
+            await reloadableVeto.reloadLocalRules();
+          }
+        },
       };
     }
 
@@ -587,20 +695,6 @@ export class PolymarketVetoRuntime {
       }
     }
 
-    if (this.resolved.config.execution.marketAccess.enabled && typeof guardArgs.token === 'string') {
-      const accessResult = this.marketAccess.check(guardArgs.token);
-      if (!accessResult.allowed) {
-        this.logAudit(spec, guardArgs, 'deny', accessResult.reason, undefined, startTime, signature);
-        throw new RuntimeError({
-          code: -32001,
-          message: `Blocked by market access: ${accessResult.reason}`,
-          data: {
-            reasonCode: 'market_access_denied',
-          },
-        });
-      }
-    }
-
     if (this.resolved.config.execution.circuitBreaker.enabled && spec.mutating) {
       const breakerResult = this.circuitBreaker.check();
       if (!breakerResult.allowed) {
@@ -620,11 +714,39 @@ export class PolymarketVetoRuntime {
       guardArgs.position_size_usd = this.tradeTracker.positionSizeUsd(guardArgs.token, this.agentId);
     }
 
+    const policyContext = await this.buildPolicyContext(guardArgs);
+
+    if (this.resolved.config.execution.marketAccess.enabled && typeof guardArgs.token === 'string') {
+      const accessResult = this.marketAccess.check(
+        guardArgs.token,
+        this.marketAccess.getMetadata(policyContext.market),
+      );
+      if (!accessResult.allowed) {
+        this.logAudit(spec, guardArgs, 'deny', accessResult.reason, undefined, startTime, signature);
+        throw new RuntimeError({
+          code: -32001,
+          message: `Blocked by market access: ${accessResult.reason}`,
+          data: {
+            reasonCode: 'market_access_denied',
+          },
+        });
+      }
+    }
+
     const liveState = this.resolveLiveState(spec, simulationOverride);
-    const policyDecision = await this.guard.guard(toolName, guardArgs, {
-      sessionId: this.sessionId,
-      agentId: this.agentId,
-    });
+    const policyDecision = policyContext.missingRequiredContexts.length > 0
+      ? {
+          decision: 'require_approval' as const,
+          reason: `Required ${policyContext.missingRequiredContexts.join(', ')} context unavailable`,
+        }
+      : await this.guard.guard(toolName, guardArgs, {
+          sessionId: this.sessionId,
+          agentId: this.agentId,
+          market: policyContext.market,
+          budget: policyContext.budget,
+          portfolio: policyContext.portfolio,
+          custom: policyContext.custom,
+        });
     const economicDecision = await this.authorizeEconomicAction(spec, toolName, guardArgs, actionId, liveState);
     const decision = this.mergeDecisions(policyDecision, economicDecision);
 
@@ -655,6 +777,239 @@ export class PolymarketVetoRuntime {
     }
 
     return await this.executePolymarketTool(spec, built, guardArgs, liveState, decision, actionId, approvalId, startTime, signature);
+  }
+
+  private getMarketContextConfig(): { enabled: boolean; ttlMs: number } {
+    return this.resolved.config.marketContext ?? {
+      enabled: true,
+      ttlMs: 30_000,
+    };
+  }
+
+  private getSessionPolicyOverlayDir(): string {
+    const overlayDir = this.resolved.config.sessionPolicy?.overlayDir;
+    if (typeof overlayDir !== 'string') {
+      return 'rules';
+    }
+
+    const trimmed = overlayDir.trim();
+    if (trimmed.length === 0 || trimmed === '.' || trimmed === '..') {
+      return 'rules';
+    }
+
+    return /^[a-zA-Z0-9._-]+$/.test(trimmed) ? trimmed : 'rules';
+  }
+
+  private async fetchMarketContext(token: string): Promise<MarketContext | null> {
+    if (!this.getMarketContextConfig().enabled || !this.binary.resolvedPath) {
+      return null;
+    }
+
+    const response = await this.execute(
+      this.binary.resolvedPath,
+      ['markets', 'get', token],
+      {
+        timeoutMs: Math.min(this.resolved.config.execution.maxCommandTimeoutMs, 5_000),
+        maxOutputBytes: this.resolved.config.execution.maxOutputBytes,
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const root = asRecordOrUndefined(response.parsed);
+    const market = firstRecord(
+      root?.market,
+      root?.data,
+      root?.result,
+      root?.markets,
+      root?.results,
+      response.parsed,
+    );
+
+    if (!market) {
+      return null;
+    }
+
+    const endDate = firstString(market.end_date, market.endDate, market.end_date_iso, market.endDateIso);
+    const endDateMs = firstNumber(market.end_date_ms, market.endDateMs, market.end_date_unix_ms, market.endDateUnixMs);
+    const bestBid = firstNumber(market.bestBid, market.best_bid, market.bid, market.bidPrice);
+    const bestAsk = firstNumber(market.bestAsk, market.best_ask, market.ask, market.askPrice);
+    const midpoint = firstNumber(market.midpoint, market.mid, market.midPrice);
+
+    let spread = firstNumber(market.spread, market.spreadPct, market.spread_ratio);
+    if (spread === undefined && bestBid !== undefined && bestAsk !== undefined) {
+      const denominator = midpoint ?? ((bestBid + bestAsk) / 2);
+      if (denominator > 0 && bestAsk >= bestBid) {
+        spread = roundNumber((bestAsk - bestBid) / denominator);
+      }
+    }
+
+    const normalized: MarketContext = { token };
+
+    if (spread !== undefined) {
+      normalized.spread = spread;
+    }
+
+    const volume = firstNumber(
+      market.volume,
+      market.volumeUsd,
+      market.volume_usd,
+      market.volume24h,
+      market.volume24hr,
+      market.volume_24h,
+    );
+    if (volume !== undefined) {
+      normalized.volume = volume;
+    }
+
+    if (endDate) {
+      normalized.end_date = endDate;
+      const parsedDate = Date.parse(endDate);
+      if (Number.isFinite(parsedDate)) {
+        normalized.end_date_ms = parsedDate;
+      }
+    }
+    if (endDateMs !== undefined) {
+      normalized.end_date_ms = endDateMs;
+    }
+
+    const liquidityUsd = firstNumber(market.liquidityUsd, market.liquidity_usd, market.liquidity, market.liquidityNum);
+    if (liquidityUsd !== undefined) {
+      normalized.liquidityUsd = liquidityUsd;
+    }
+
+    const category = firstString(market.category, market.marketCategory, market.group, market.topic);
+    if (category) {
+      normalized.category = category;
+    }
+
+    return normalized;
+  }
+
+  private async buildPolicyContext(guardArgs: Record<string, unknown>): Promise<PolicyContextEnvelope> {
+    const requiredContexts = await this.policyManager.getRequiredContexts();
+    const token = optionalString(guardArgs.token);
+    const market = token
+      ? (await this.marketContextResolver.resolve(token)) ?? undefined
+      : undefined;
+    const marketContext = market ? { ...market } as Record<string, unknown> : undefined;
+
+    let budget = this.toBudgetPolicyContext(this.economicAuthorizer.getCachedBudget());
+    if (!budget && (requiredContexts.budget || this.resolved.config.economic.enabled)) {
+      const budgetStatus = await this.economicAuthorizer.getBudgetStatus({
+        sessionId: this.sessionId,
+        agentId: this.agentId,
+      });
+      budget = this.toBudgetPolicyContext(budgetStatus.budget);
+    }
+
+    const portfolio = this.toPortfolioPolicyContext();
+    const missingRequiredContexts: string[] = [];
+
+    if (requiredContexts.market && !this.hasMarketPolicyContext(market)) {
+      missingRequiredContexts.push('market');
+    }
+    if (requiredContexts.budget && !this.hasBudgetPolicyContext(budget)) {
+      missingRequiredContexts.push('budget');
+    }
+    if (requiredContexts.portfolio && !this.hasPortfolioPolicyContext(portfolio)) {
+      missingRequiredContexts.push('portfolio');
+    }
+
+    return {
+      market: marketContext,
+      budget,
+      portfolio,
+      custom: {
+        arguments: { ...guardArgs },
+        ...(marketContext ? { market: { ...marketContext } } : {}),
+        ...(budget ? { budget: { ...budget } } : {}),
+        ...(portfolio ? { portfolio: { ...portfolio } } : {}),
+      },
+      missingRequiredContexts,
+    };
+  }
+
+  private toBudgetPolicyContext(budgetSnapshot: Awaited<ReturnType<EconomicAuthorizer['getBudgetStatus']>>['budget']): Record<string, unknown> | undefined {
+    if (!budgetSnapshot) {
+      return undefined;
+    }
+
+    const scope = budgetSnapshot.session ?? budgetSnapshot.agent;
+    const dailyLimitUsd = scope?.limitUsd;
+    const spentUsd = scope?.spentUsd;
+    const remainingUsd = scope?.remainingUsd;
+    const percentUsed = dailyLimitUsd !== undefined && spentUsd !== undefined && dailyLimitUsd > 0
+      ? roundNumber((spentUsd / dailyLimitUsd) * 100)
+      : undefined;
+
+    const context: Record<string, unknown> = {
+      currency: budgetSnapshot.currency,
+      source: budgetSnapshot.source,
+    };
+
+    if (budgetSnapshot.stale !== undefined) {
+      context.stale = budgetSnapshot.stale;
+    }
+    if (remainingUsd !== undefined) {
+      context.remainingUsd = remainingUsd;
+      context.remaining_usd = remainingUsd;
+    }
+    if (dailyLimitUsd !== undefined) {
+      context.dailyLimitUsd = dailyLimitUsd;
+      context.daily_limit_usd = dailyLimitUsd;
+    }
+    if (percentUsed !== undefined) {
+      context.percentUsed = percentUsed;
+      context.percent_used = percentUsed;
+    }
+
+    return context;
+  }
+
+  private toPortfolioPolicyContext(): Record<string, unknown> {
+    const summary = this.positionTracker.getSummary();
+    return {
+      open_count: summary.open_count,
+      total_exposure_usd: summary.total_exposure_usd,
+      total_pnl_usd: summary.total_pnl_usd,
+      unrealized_pnl_usd: summary.unrealized_pnl_usd,
+      positionCount: summary.open_count,
+      totalExposureUsd: summary.total_exposure_usd,
+      totalPnlUsd: summary.total_pnl_usd,
+      unrealizedPnlUsd: summary.unrealized_pnl_usd,
+    };
+  }
+
+  private hasMarketPolicyContext(market?: MarketContext): boolean {
+    if (!market) {
+      return false;
+    }
+
+    return [
+      market.spread,
+      market.volume,
+      market.end_date,
+      market.end_date_ms,
+      market.liquidityUsd,
+      market.category,
+    ].some((value) => value !== undefined);
+  }
+
+  private hasBudgetPolicyContext(budget?: Record<string, unknown>): boolean {
+    return Boolean(
+      budget
+      && [budget.remainingUsd, budget.dailyLimitUsd, budget.percentUsed].some((value) => value !== undefined),
+    );
+  }
+
+  private hasPortfolioPolicyContext(portfolio?: Record<string, unknown>): boolean {
+    return Boolean(
+      portfolio
+      && [portfolio.open_count, portfolio.total_exposure_usd, portfolio.total_pnl_usd].some((value) => value !== undefined),
+    );
   }
 
   private async authorizeEconomicAction(
@@ -1101,6 +1456,49 @@ export class PolymarketVetoRuntime {
     let result: unknown;
 
     switch (toolName) {
+      case 'policy_create':
+        result = await this.policyManager.create({
+          prompt: typeof args.prompt === 'string' ? args.prompt : '',
+          toolName: typeof args.toolName === 'string' ? args.toolName : undefined,
+        });
+        break;
+
+      case 'policy_list':
+        result = await this.policyManager.list();
+        break;
+
+      case 'policy_tighten': {
+        const newCondition = args.newCondition;
+        if (!newCondition || typeof newCondition !== 'object' || Array.isArray(newCondition)) {
+          throw new RuntimeError({
+            code: -32602,
+            message: "Invalid 'newCondition': expected object",
+          });
+        }
+
+        result = await this.policyManager.tighten({
+          ruleId: typeof args.ruleId === 'string' ? args.ruleId : '',
+          newCondition: newCondition as Record<string, unknown>,
+        });
+        break;
+      }
+
+      case 'policy_request_edit': {
+        const changes = args.changes;
+        if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+          throw new RuntimeError({
+            code: -32602,
+            message: "Invalid 'changes': expected object",
+          });
+        }
+
+        result = await this.policyManager.requestEdit({
+          ruleId: typeof args.ruleId === 'string' ? args.ruleId : '',
+          changes: changes as Record<string, unknown>,
+        });
+        break;
+      }
+
       case 'audit_query':
         result = this.auditLogger.query({
           since: typeof args.since === 'string' ? args.since : undefined,

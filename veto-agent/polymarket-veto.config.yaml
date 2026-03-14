@@ -74,6 +74,13 @@ economic:
     timeoutMs: 10000
     cacheTtlMs: 30000
 
+marketContext:
+  enabled: true
+  ttlMs: 30000
+
+sessionPolicy:
+  overlayDir: rules
+
 x402:
   enabled: false
   evmPrivateKeyEnv: X402_EVM_PRIVATE_KEY

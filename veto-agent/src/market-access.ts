@@ -11,10 +11,37 @@ export interface MarketAccessResult {
   reason?: string;
 }
 
+export interface MarketAccessMetadata {
+  category?: string;
+  liquidityUsd?: number;
+}
+
 export class MarketAccessControl {
   constructor(private readonly config: MarketAccessConfig) {}
 
-  check(token: string, metadata?: { category?: string; liquidityUsd?: number }): MarketAccessResult {
+  getMetadata(metadata?: { category?: unknown; liquidityUsd?: unknown }): MarketAccessMetadata | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+
+    const category = typeof metadata.category === 'string' && metadata.category.trim().length > 0
+      ? metadata.category.trim()
+      : undefined;
+    const liquidityUsd = typeof metadata.liquidityUsd === 'number' && Number.isFinite(metadata.liquidityUsd)
+      ? metadata.liquidityUsd
+      : undefined;
+
+    if (category === undefined && liquidityUsd === undefined) {
+      return undefined;
+    }
+
+    return {
+      category,
+      liquidityUsd,
+    };
+  }
+
+  check(token: string, metadata?: MarketAccessMetadata): MarketAccessResult {
     if (!this.config.enabled) {
       return { allowed: true };
     }

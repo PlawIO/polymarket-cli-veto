@@ -87,6 +87,13 @@ const DEFAULTS: SidecarConfig = {
       cacheTtlMs: 30_000,
     },
   },
+  marketContext: {
+    enabled: true,
+    ttlMs: 30_000,
+  },
+  sessionPolicy: {
+    overlayDir: 'rules',
+  },
   x402: {
     enabled: false,
     evmPrivateKeyEnv: 'X402_EVM_PRIVATE_KEY',
@@ -257,6 +264,8 @@ function merge(raw: unknown, base: SidecarConfig): SidecarConfig {
   const identity = asRecord(veto.identity);
   const economic = asRecord(root.economic);
   const economicCloud = asRecord(economic.cloud);
+  const marketContext = asRecord(root.marketContext);
+  const sessionPolicy = asRecord(root.sessionPolicy);
   const x402 = asRecord(root.x402);
   const x402Tools = asRecord(x402.tools);
 
@@ -343,6 +352,13 @@ function merge(raw: unknown, base: SidecarConfig): SidecarConfig {
         cacheTtlMs: optionalPositiveInt(economicCloud.cacheTtlMs) ?? base.economic.cloud.cacheTtlMs,
       },
     },
+    marketContext: {
+      enabled: optionalBoolean(marketContext.enabled) ?? base.marketContext.enabled,
+      ttlMs: optionalPositiveInt(marketContext.ttlMs) ?? base.marketContext.ttlMs,
+    },
+    sessionPolicy: {
+      overlayDir: optionalString(sessionPolicy.overlayDir) ?? base.sessionPolicy.overlayDir,
+    },
     x402: {
       enabled: optionalBoolean(x402.enabled) ?? base.x402.enabled,
       evmPrivateKeyEnv: optionalString(x402.evmPrivateKeyEnv) ?? base.x402.evmPrivateKeyEnv,
@@ -421,6 +437,8 @@ export function toJsonSafeConfig(config: SidecarConfig): SidecarConfig {
       scopes: [...config.economic.scopes],
       cloud: { ...config.economic.cloud },
     },
+    marketContext: { ...config.marketContext },
+    sessionPolicy: { ...config.sessionPolicy },
     x402: {
       ...config.x402,
       tools: {

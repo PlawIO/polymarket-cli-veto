@@ -496,7 +496,7 @@ export class EconomicAuthorizer {
     return [...this.pendingApprovals];
   }
 
-  private getCachedBudget(): EconomicBudgetSnapshot | undefined {
+  getCachedBudget(): EconomicBudgetSnapshot | undefined {
     if (!this.cachedBudget) return undefined;
     if (this.now() - this.cachedBudget.cachedAt > this.config.cloud.cacheTtlMs) {
       return undefined;

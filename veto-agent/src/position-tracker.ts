@@ -22,6 +22,13 @@ export interface PositionTrackerConfig {
   dataFilePath: string;
 }
 
+export interface PositionSummary {
+  open_count: number;
+  total_exposure_usd: number;
+  total_pnl_usd: number;
+  unrealized_pnl_usd: number;
+}
+
 export class PositionTracker {
   private positions = new Map<string, Position>();
   private midpoints = new Map<string, number>();
@@ -127,6 +134,18 @@ export class PositionTracker {
 
   getPosition(token: string): Position | undefined {
     return this.positions.get(token);
+  }
+
+  getSummary(): PositionSummary {
+    const snapshot = this.getSnapshot();
+    const totalExposureUsd = snapshot.positions.reduce((sum, position) => sum + position.costBasisUsd, 0);
+
+    return {
+      open_count: snapshot.positions.length,
+      total_exposure_usd: Number(totalExposureUsd.toFixed(8)),
+      total_pnl_usd: Number(snapshot.totalPnl.toFixed(8)),
+      unrealized_pnl_usd: Number(snapshot.totalUnrealizedPnl.toFixed(8)),
+    };
   }
 
   save(): void {

@@ -506,7 +506,121 @@ const MUTATING_TOOLS: ToolSpec[] = [
   },
 ];
 
+const POLICY_CONDITION_OPERATORS = [
+  'equals',
+  'not_equals',
+  'contains',
+  'not_contains',
+  'starts_with',
+  'ends_with',
+  'matches',
+  'greater_than',
+  'less_than',
+  'percent_of',
+  'length_greater_than',
+  'in',
+  'not_in',
+  'outside_hours',
+  'within_hours',
+] as const;
+
 const INTERNAL_TOOLS: ToolSpec[] = [
+  {
+    name: 'policy_create',
+    description: 'Generate a new session policy from a natural language prompt.',
+    mutating: true,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string' },
+        toolName: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['prompt', 'toolName']);
+      const prompt = asString(args.prompt, 'prompt');
+      const toolName = maybeString(args.toolName, 'toolName');
+      return { argv: [], guardArgs: { prompt, toolName } };
+    },
+  },
+  {
+    name: 'policy_list',
+    description: 'List all active session policies and their sources.',
+    mutating: false,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, []);
+      return { argv: [], guardArgs: {} };
+    },
+  },
+  {
+    name: 'policy_tighten',
+    description: 'Make a generated session rule more restrictive by appending a new condition.',
+    mutating: true,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      required: ['ruleId', 'newCondition'],
+      properties: {
+        ruleId: { type: 'string' },
+        newCondition: {
+          type: 'object',
+          required: ['field', 'operator', 'value'],
+          properties: {
+            field: { type: 'string' },
+            operator: { type: 'string', enum: [...POLICY_CONDITION_OPERATORS] },
+            value: {},
+            reference: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['ruleId', 'newCondition']);
+      const ruleId = asString(args.ruleId, 'ruleId');
+      const newCondition = args.newCondition;
+      if (!newCondition || typeof newCondition !== 'object' || Array.isArray(newCondition)) {
+        throw new Error("Invalid 'newCondition': expected object");
+      }
+      return { argv: [], guardArgs: { ruleId, newCondition } };
+    },
+  },
+  {
+    name: 'policy_request_edit',
+    description: 'Request a manual review for a policy edit that may loosen controls.',
+    mutating: false,
+    execution: 'internal',
+    inputSchema: {
+      type: 'object',
+      required: ['ruleId', 'changes'],
+      properties: {
+        ruleId: { type: 'string' },
+        changes: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+      additionalProperties: false,
+    },
+    build(args) {
+      assertAllowedFields(args, ['ruleId', 'changes']);
+      const ruleId = asString(args.ruleId, 'ruleId');
+      const changes = args.changes;
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+        throw new Error("Invalid 'changes': expected object");
+      }
+      return { argv: [], guardArgs: { ruleId, changes } };
+    },
+  },
   {
     name: 'audit_query',
     description: 'Query the audit log for recent decisions and trade history.',

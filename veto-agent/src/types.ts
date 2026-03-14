@@ -21,6 +21,15 @@ export type PolicyProfile = (typeof POLICY_PROFILES)[number];
 export type McpTransport = 'stdio' | 'sse';
 export type ApprovalMode = 'wait' | 'return';
 
+export interface MarketContextConfig {
+  enabled: boolean;
+  ttlMs: number;
+}
+
+export interface SessionPolicyConfig {
+  overlayDir: string;
+}
+
 export interface SidecarConfig {
   polymarket: {
     binaryPath: string;
@@ -59,6 +68,8 @@ export interface SidecarConfig {
     identity: IdentityConfig;
   };
   economic: EconomicConfig;
+  marketContext: MarketContextConfig;
+  sessionPolicy: SessionPolicyConfig;
   x402: X402Config;
 }
 
